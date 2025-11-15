@@ -1,0 +1,25 @@
+{
+  "name": "hajihami-api",
+  "version": "2.0.1",
+  "description": "实时同步Notion数据库到本地JSON文件",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js api",
+    "api": "node index.js api",
+    "sync": "node index.js sync",
+    "realtime": "node index.js realtime",
+    "status": "node index.js status",
+    "list": "node index.js list",
+    "test": "node index.js test",
+    "stats": "node index.js stats",
+    "clean": "node index.js clean",
+    "forcesync": "node index.js sync --full",
+    "forcerealtime": "node index.js realtime --full"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "dotenv": "^16.0.0",
+    "express": "^4.21.2"
+  }
+}
