@@ -16,6 +16,10 @@
     {
       "src": "api/ping-vercel.js",
       "use": "@vercel/node"
+    },
+    {
+      "src": "api/favicon.js",
+      "use": "@vercel/node"
     }
   ],
   "routes": [
@@ -34,6 +38,10 @@
     {
       "src": "/api/ping",
       "dest": "/api/ping-vercel.js"
+    },
+    {
+      "src": "/favicon.ico",
+      "dest": "/api/favicon.js"
     }
   ]
 }
