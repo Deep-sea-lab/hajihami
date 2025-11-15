@@ -1,73 +1,24 @@
-const fs = require('fs');
-const path = require('path');
+// Vercel API endpoint that returns empty data
+// Note: Vercel serverless functions can't persist file data
+// Use /api/sync to trigger data updates which are lost on function restart
 
 export default async function handler(req, res) {
+  // 在Vercel环境中，由于文件系统是临时的
+  // 我们需要返回空数据或错误信息
+
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+  res.setHeader('Content-Type', 'application/json');
+
   try {
-    const dataDir = path.join(process.cwd(), 'data');
-    const allData = [];
-
-    if (fs.existsSync(dataDir)) {
-      const files = fs.readdirSync(dataDir).filter(f => f.endsWith('.json'));
-      files.forEach(file => {
-        const filePath = path.join(dataDir, file);
-        try {
-          const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-          allData.push(...data);
-        } catch (error) {
-          console.error(`读取文件 ${file} 失败:`, error.message);
-        }
-      });
-    }
-
-    // 转换格式
-    const netEaseSongs = allData.map(songData => {
-      let songId;
-      if (songData.bv_number) {
-        let hash = 0;
-        for (let i = 0; i < songData.bv_number.length; i++) {
-          const char = songData.bv_number.charCodeAt(i);
-          hash = ((hash << 5) - hash) + char;
-          hash = hash & hash;
-        }
-        songId = Math.abs(hash);
-      } else {
-        songId = Math.floor(Math.random() * 10000000);
-      }
-
-      return {
-        id: songId,
-        name: songData.title || '',
-        artists: songData.creator ? [{ name: songData.creator }] : [],
-        album: { name: songData.original_song || '未知' },
-        url: songData.video_url || '',
-        picUrl: songData.cover_url || '',
-        playedCount: songData.play_count || 0,
-        fee: 0,
-        feeReason: 0,
-        pc: true,
-        noCopyrightRcmd: null,
-        bv_number: songData.bv_number,
-        creation_time: songData.creation_time,
-        publish_time: songData.publish_time,
-        style: songData.style
-      };
-    });
-
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
-    res.setHeader('Content-Type', 'application/json');
-
     res.status(200).json({
       code: 200,
-      data: netEaseSongs,
-      total: netEaseSongs.length
+      data: [],
+      total: 0,
+      message: 'Vercel环境不支持持久化数据存储。请使用/api/sync手动同步数据后立即访问。'
     });
   } catch (error) {
     console.error('获取歌曲API错误:', error);
-
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Content-Type', 'application/json');
-
     res.status(500).json({
       code: 500,
       message: '服务器错误',

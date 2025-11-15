@@ -2,18 +2,38 @@
   "version": 2,
   "builds": [
     {
-      "src": "index.js",
+      "src": "api/sync-vercel.js",
       "use": "@vercel/node"
     },
     {
-      "src": "vercel-cron.js",
+      "src": "api/songs-vercel.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "api/search-vercel.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "api/ping-vercel.js",
       "use": "@vercel/node"
     }
   ],
   "routes": [
     {
-      "src": "/api/(.*)",
-      "dest": "/api/$1"
+      "src": "/api/sync",
+      "dest": "/api/sync-vercel.js"
+    },
+    {
+      "src": "/api/songs",
+      "dest": "/api/songs-vercel.js"
+    },
+    {
+      "src": "/api/search",
+      "dest": "/api/search-vercel.js"
+    },
+    {
+      "src": "/api/ping",
+      "dest": "/api/ping-vercel.js"
     }
   ]
 }
