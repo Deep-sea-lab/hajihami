@@ -1,5 +1,16 @@
-// Vercel-specific sync endpoint with cloud cache integration - 优化版增量同步
+// Vercel-specific sync endpoint with cloud cache integration - 增量同步
 import cloudCache from '../cloud-cache-adapter.js';
+import fs from 'fs';
+import path from 'path';
+
+// 本地缓存路径
+const LOCAL_CACHE_DIR = path.join(process.cwd(), 'data');
+const LOCAL_CACHE_FILE = path.join(LOCAL_CACHE_DIR, 'songs.json');
+
+// 确保本地缓存目录存在
+if (!fs.existsSync(LOCAL_CACHE_DIR)) {
+  fs.mkdirSync(LOCAL_CACHE_DIR, { recursive: true });
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') {
@@ -148,32 +159,17 @@ export default async function handler(req, res) {
       return parsed;
     }
 
-    // 查询所有页面（移除数量限制以获取全部数据）
-    async function queryRecentlyUpdatedPages(databaseId, lastSyncTime = null) {
+    // 查询所有页面
+    async function queryAllPages(databaseId) {
       let allPages = [];
       let hasMore = true;
       let startCursor = null;
       const startTime = new Date().getTime(); // 初始化开始时间
 
-      // 如果没有指定lastSyncTime，则获取所有页面（完整同步）
-      // 如果指定了lastSyncTime，则只获取该时间后更新的页面（增量同步）
-      const filter = lastSyncTime ? {
-        timestamp: 'last_edited_time',
-        // 获取指定时间之后修改的页面
-        gte: new Date(lastSyncTime).toISOString()
-      } : null;
-
-      while (hasMore) { // 移除页面数限制以获取全部数据
+      while (hasMore) {
         const body = { 
           page_size: 100, // 增加页面大小以提高效率
         };
-
-        if (filter) {
-          body.filter = {
-            property: 'last_edited_time',
-            date: filter
-          };
-        }
 
         if (startCursor) {
           body.start_cursor = startCursor;
@@ -186,39 +182,15 @@ export default async function handler(req, res) {
         });
 
         if (!response.ok) {
-          console.warn(`数据库 ${databaseId} 查询失败，尝试不带过滤器查询`);
-          // 如果带过滤器查询失败，尝试获取所有页面
-          const fallbackBody = { 
-            page_size: 100,
-            start_cursor: startCursor || undefined
-          };
-          
-          if (filter) {
-            fallbackBody.filter = filter; // 仍尝试应用过滤器
-          }
-          
-          const fallbackResponse = await fetch(`${baseURL}/databases/${databaseId}/query`, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify(fallbackBody)
-          });
-          
-          if (!fallbackResponse.ok) {
-            throw new Error(`HTTP ${fallbackResponse.status}: ${await fallbackResponse.text()}`);
-          }
-          
-          const data = await fallbackResponse.json();
-          const newPages = data.results || [];
-          allPages = allPages.concat(newPages);
-          hasMore = data.has_more;
-          startCursor = data.next_cursor;
-        } else {
-          const data = await response.json();
-          const newPages = data.results || [];
-          allPages = allPages.concat(newPages);
-          hasMore = data.has_more;
-          startCursor = data.next_cursor;
+          console.warn(`数据库 ${databaseId} 查询失败`);
+          throw new Error(`HTTP ${response.status}: ${await response.text()}`);
         }
+        
+        const data = await response.json();
+        const newPages = data.results || [];
+        allPages = allPages.concat(newPages);
+        hasMore = data.has_more;
+        startCursor = data.next_cursor;
 
         // 每获取页面显示进度
         console.log(`📦 已获取 ${allPages.length} 条记录`);
@@ -234,51 +206,25 @@ export default async function handler(req, res) {
       return allPages;
     }
 
-    // 获取上次同步时间，用于核对云端数据库
-    let lastSyncTime = null;
+    // 获取云端缓存的歌曲数据用于对比
+    let cachedSongs = [];
     try {
-      const lastSyncInfo = await cloudCache.getLastSyncInfo();
-      if (lastSyncInfo && lastSyncInfo.lastSyncTime) {
-        lastSyncTime = lastSyncInfo.lastSyncTime;
-        console.log(`🔄 使用上次同步时间进行核对: ${lastSyncTime}`);
-      } else {
-        console.log(`🔄 首次核对，获取所有数据...`);
-      }
+      cachedSongs = await cloudCache.getAllSongs();
+      console.log(`🔄 从云端缓存获取 ${cachedSongs.length} 首歌曲用于对比`);
     } catch (error) {
-      console.log(`⚠️ 获取上次同步时间失败，执行完整核对:`, error.message);
+      console.log('⚠️ 从云端缓存获取数据失败，继续同步:', error.message);
     }
 
-    // 获取并处理数据 - 基于上次同步时间进行增量同步
+    // 获取并处理数据
     const dbIds = databaseIds.split(',').map(id => id.trim());
-    console.log(`🔄 开始处理 ${dbIds.length} 个数据库（基于时间戳的增量同步）:`, dbIds);
+    console.log(`🔄 开始处理 ${dbIds.length} 个数据库:`, dbIds);
 
     let allPages = [];
     
     for (const dbId of dbIds) {
       console.log(`🔄 开始处理数据库: ${dbId}`);
-      const pages = await queryRecentlyUpdatedPages(dbId, lastSyncTime);
+      const pages = await queryAllPages(dbId);
       allPages = allPages.concat(pages);
-    }
-
-    // 如果没有获取到新页面且存在上次同步时间，从云端缓存获取所有数据作为备选
-    if (allPages.length === 0 && lastSyncTime) {
-      console.log('🔍 没有新数据，尝试从云端缓存获取最新数据...');
-      try {
-        const cachedSongs = await cloudCache.getAllSongs();
-        if (cachedSongs && cachedSongs.length > 0) {
-          console.log(`✅ 从云端缓存获取 ${cachedSongs.length} 首歌曲`);
-          return res.status(200).json({
-            code: 200,
-            success: true,
-            data: cachedSongs,
-            total: cachedSongs.length,
-            sync_time: new Date().toISOString(),
-            message: `从云端缓存获取 ${cachedSongs.length} 首歌曲（无新数据同步）`
-          });
-        }
-      } catch (error) {
-        console.log('⚠️ 从云端缓存获取数据失败:', error.message);
-      }
     }
 
     // 解析数据
@@ -299,40 +245,8 @@ export default async function handler(req, res) {
     }
     process.stdout.write('\n');
 
-    // 获取封面（最小化数量和并发数以避免超时）
-    console.log('🖼️ 获取B站封面（最小化处理）...');
-    const maxCoversToFetch = 5; // 极大减少封面数量
-    const coverPromises = [];
-
-    // 批量处理封面获取，极小并发数
-    for (let i = 0; i < Math.min(parsedPages.length, maxCoversToFetch); i++) {
-      const page = parsedPages[i];
-      if (page.bv_number) {
-        // 创建封面获取Promise，但不等待
-        const coverPromise = getBilibiliCover(page.bv_number).then(coverUrl => {
-          page.cover_url = coverUrl;
-          console.log(`🖼️ ${i + 1}/${Math.min(parsedPages.length, maxCoversToFetch)} - ${page.bv_number}: ${page.cover_url ? '✅' : '❌'}`);
-        }).catch(() => {
-          // 忽略所有错误
-          page.cover_url = null;
-        });
-        
-        coverPromises.push(coverPromise);
-        
-        // 极小并发数
-        if (coverPromises.length >= 1) {  // 每次只处理1个
-          await Promise.allSettled(coverPromises.splice(0, 1));
-        }
-      }
-    }
-    
-    // 处理剩余的封面请求
-    if (coverPromises.length > 0) {
-      await Promise.allSettled(coverPromises);
-    }
-
     // 转换格式
-    const songs = parsedPages.map(songData => {
+    const newSongs = parsedPages.map(songData => {
       let songId;
       if (songData.bv_number) {
         let hash = 0;
@@ -365,31 +279,113 @@ export default async function handler(req, res) {
       };
     });
 
-    // 立即返回结果，将云端缓存更新放到后台执行
-    const response = {
-      code: 200,
-      success: true,
-      data: songs,
-      total: songs.length,
-      sync_time: new Date().toISOString(),
-      message: `增量同步完成，获取 ${songs.length} 首新歌曲`
-    };
+    // 增量同步逻辑：对比云端缓存，只添加新数据或更新变化的数据
+    const cachedSongIds = new Set(cachedSongs.map(song => song.id));
+    const newSongsToSave = [];
 
-    // 在后台异步更新云端缓存
-    if (songs.length > 0) {
-      console.log(`☁️ 后台保存 ${songs.length} 首歌曲到云端缓存...`);
-      cloudCache.saveSongs(songs).then(cloudResult => {
+    for (const newSong of newSongs) {
+      if (!cachedSongIds.has(newSong.id)) {
+        // 新歌曲，添加到保存列表
+        newSongsToSave.push(newSong);
+      } else {
+        // 检查是否需要更新现有歌曲（比较关键字段）
+        const existingSong = cachedSongs.find(song => song.id === newSong.id);
+        if (existingSong) {
+          // 如果关键信息发生变化，则更新
+          if (existingSong.name !== newSong.name || 
+              existingSong.url !== newSong.url || 
+              existingSong.picUrl !== newSong.picUrl) {
+            newSongsToSave.push(newSong); // 添加以覆盖更新
+          }
+        }
+      }
+    }
+
+    console.log(`📊 增量同步统计: 总共${newSongs.length}首, 新增/更新${newSongsToSave.length}首, 已存在${newSongs.length - newSongsToSave.length}首`);
+
+    // 如果有新数据需要保存
+    if (newSongsToSave.length > 0) {
+      // 获取封面（最小化数量和并发数以避免超时）
+      console.log('🖼️ 获取B站封面（最小化处理）...');
+      const maxCoversToFetch = 5; // 极大减少封面数量
+      const coverPromises = [];
+
+      // 批量处理封面获取，极小并发数
+      for (let i = 0; i < Math.min(newSongsToSave.length, maxCoversToFetch); i++) {
+        const page = newSongsToSave[i];
+        if (page.bv_number) {
+          // 创建封面获取Promise，但不等待
+          const coverPromise = getBilibiliCover(page.bv_number).then(coverUrl => {
+            page.cover_url = coverUrl;
+            console.log(`🖼️ ${i + 1}/${Math.min(newSongsToSave.length, maxCoversToFetch)} - ${page.bv_number}: ${page.cover_url ? '✅' : '❌'}`);
+          }).catch(() => {
+            // 忽略所有错误
+            page.cover_url = null;
+          });
+          
+          coverPromises.push(coverPromise);
+          
+          // 极小并发数
+          if (coverPromises.length >= 1) {  // 每次只处理1个
+            await Promise.allSettled(coverPromises.splice(0, 1));
+          }
+        }
+      }
+      
+      // 处理剩余的封面请求
+      if (coverPromises.length > 0) {
+        await Promise.allSettled(coverPromises);
+      }
+
+      // 将增量数据保存到云端缓存
+      console.log(`☁️ 保存 ${newSongsToSave.length} 首新/更新歌曲到云端缓存...`);
+      cloudCache.saveSongs(newSongsToSave).then(cloudResult => {
         if (cloudResult.success) {
-          console.log(`✅ 云端缓存更新成功`);
+          console.log(`✅ 云端缓存增量更新成功`);
         } else {
-          console.error(`❌ 云端缓存更新失败:`, cloudResult.error);
+          console.error(`❌ 云端缓存增量更新失败:`, cloudResult.error);
         }
       }).catch(error => {
         console.error(`❌ 保存到云端缓存时出错:`, error.message);
       });
+
+      // 更新本地缓存
+      try {
+        const allSongs = [...cachedSongs, ...newSongsToSave];
+        fs.writeFileSync(LOCAL_CACHE_FILE, JSON.stringify(allSongs, null, 2));
+        console.log(`💾 本地缓存已更新，总计 ${allSongs.length} 首歌曲`);
+      } catch (error) {
+        console.error('❌ 保存本地缓存失败:', error.message);
+      }
+    } else {
+      console.log('✅ 无需更新，所有歌曲已是最新');
+      // 如果没有新数据，仍然更新本地缓存（以防本地缓存丢失）
+      try {
+        if (!fs.existsSync(LOCAL_CACHE_FILE) && cachedSongs.length > 0) {
+          fs.writeFileSync(LOCAL_CACHE_FILE, JSON.stringify(cachedSongs, null, 2));
+          console.log(`💾 本地缓存已创建，总计 ${cachedSongs.length} 首歌曲`);
+        }
+      } catch (error) {
+        console.error('❌ 创建本地缓存失败:', error.message);
+      }
     }
 
-    console.log(`✅ 增量同步立即返回，处理 ${songs.length} 首歌曲`);
+    // 返回完整的当前数据
+    const allCurrentSongs = newSongsToSave.length > 0 
+      ? [...cachedSongs, ...newSongsToSave] 
+      : cachedSongs;
+
+    const response = {
+      code: 200,
+      success: true,
+      data: allCurrentSongs,
+      total: allCurrentSongs.length,
+      newAdded: newSongsToSave.length,
+      sync_time: new Date().toISOString(),
+      message: `增量同步完成，新增/更新 ${newSongsToSave.length} 首歌曲，总计 ${allCurrentSongs.length} 首`
+    };
+
+    console.log(`✅ 增量同步完成，新增/更新 ${newSongsToSave.length} 首歌曲`);
     return res.status(200).json(response);
 
   } catch (error) {
