@@ -120,11 +120,11 @@ CREATE INDEX idx_songs_creation_time ON songs(creation_time);
     }
 
     try {
-      // 使用全文搜索或模糊匹配
+      // 使用模糊匹配，适配 JSONB 字段的正确语法
       const { data, error } = await this.supabase
         .from('songs')
         .select('*')
-        .or(`name.ilike.%${keywords}%,artists->>0->>name.ilike.%${keywords}%,album->>name.ilike.%${keywords}%,style.ilike.%${keywords}%,original_song.ilike.%${keywords}%`)
+        .or(`name.ilike.%${keywords}%,style.ilike.%${keywords}%`)
         .limit(limit);
 
       if (error) {
@@ -132,8 +132,42 @@ CREATE INDEX idx_songs_creation_time ON songs(creation_time);
         throw error;
       }
 
-      console.log(`✅ 搜索到 ${data.length} 首歌曲 (关键词: ${keywords})`);
-      return data || [];
+      // 在获取数据后进行更复杂的搜索过滤
+      const filteredData = data.filter(song => {
+        // 检查 name
+        if (song.name && song.name.toLowerCase().includes(keywords.toLowerCase())) {
+          return true;
+        }
+        
+        // 检查 artists (JSONB 字段)
+        if (song.artists && Array.isArray(song.artists)) {
+          for (const artist of song.artists) {
+            if (artist.name && artist.name.toLowerCase().includes(keywords.toLowerCase())) {
+              return true;
+            }
+          }
+        }
+        
+        // 检查 album
+        if (song.album && song.album.name && song.album.name.toLowerCase().includes(keywords.toLowerCase())) {
+          return true;
+        }
+        
+        // 检查 style
+        if (song.style && song.style.toLowerCase().includes(keywords.toLowerCase())) {
+          return true;
+        }
+        
+        // 检查 original_song
+        if (song.original_song && song.original_song.toLowerCase().includes(keywords.toLowerCase())) {
+          return true;
+        }
+        
+        return false;
+      });
+
+      console.log(`✅ 搜索到 ${filteredData.length} 首歌曲 (关键词: ${keywords})`);
+      return filteredData;
     } catch (error) {
       console.error('搜索歌曲时发生错误:', error);
       return [];
