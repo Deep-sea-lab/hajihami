@@ -234,18 +234,18 @@ export default async function handler(req, res) {
       return allPages;
     }
 
-    // 获取上次同步时间，用于增量同步
+    // 获取上次同步时间，用于核对云端数据库
     let lastSyncTime = null;
     try {
       const lastSyncInfo = await cloudCache.getLastSyncInfo();
       if (lastSyncInfo && lastSyncInfo.lastSyncTime) {
         lastSyncTime = lastSyncInfo.lastSyncTime;
-        console.log(`🔄 使用上次同步时间进行增量同步: ${lastSyncTime}`);
+        console.log(`🔄 使用上次同步时间进行核对: ${lastSyncTime}`);
       } else {
-        console.log(`🔄 首次同步，获取所有数据...`);
+        console.log(`🔄 首次核对，获取所有数据...`);
       }
     } catch (error) {
-      console.log(`⚠️ 获取上次同步时间失败，执行完整同步:`, error.message);
+      console.log(`⚠️ 获取上次同步时间失败，执行完整核对:`, error.message);
     }
 
     // 获取并处理数据 - 基于上次同步时间进行增量同步

@@ -131,19 +131,40 @@ CREATE INDEX idx_songs_creation_time ON songs(creation_time);
   // 从云端获取所有歌曲
   async getAllSongs() {
     try {
-      // 不限制数量，获取所有数据
-      const { data, error } = await this.supabase
-        .from('songs')
-        .select('*', { count: 'exact' }) // 添加计数以了解总数
-        .order('created_at', { ascending: false });
+      // 分批获取数据以避免大响应问题
+      let allSongs = [];
+      let offset = 0;
+      const limit = 1000; // 每批获取1000条
+      let hasMore = true;
 
-      if (error) {
-        console.error('从 Supabase 获取歌曲数据失败:', error);
-        throw error;
+      while (hasMore) {
+        const { data, error, count } = await this.supabase
+          .from('songs')
+          .select('*', { count: 'exact' })
+          .range(offset, offset + limit - 1)
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          console.error('从 Supabase 获取歌曲数据失败:', error);
+          throw error;
+        }
+
+        if (data && data.length > 0) {
+          allSongs = allSongs.concat(data);
+          console.log(`✅ 批次获取 ${data.length} 首歌曲 (总计: ${allSongs.length})`);
+        }
+
+        // 检查是否还有更多数据
+        hasMore = data && data.length === limit;
+        if (!hasMore) {
+          console.log(`✅ 数据获取完成，总计: ${allSongs.length} 首歌曲`);
+        }
+
+        offset += limit;
       }
 
-      console.log(`✅ 从云端获取 ${data ? data.length : 0} 首歌曲 (总计: ${data ? data.length : 0})`);
-      return data || [];
+      console.log(`✅ 从云端获取 ${allSongs.length} 首歌曲 (分批获取)`);
+      return allSongs;
     } catch (error) {
       console.error('获取歌曲数据时发生错误:', error);
       return [];
