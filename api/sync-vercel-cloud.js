@@ -213,7 +213,7 @@ export default async function handler(req, res) {
         startCursor = data.next_cursor;
 
         // 检查执行时间，防止超时
-        if (process.env.VERCEL && Date.now() - startTime > 28000) { // 28秒后停止，留出处理时间
+        if (process.env.VERCEL && Date.now() - startTime > 55000) { // 增加到55秒（Vercel函数最大60秒）
           console.log('⏰ 接近超时限制，停止获取更多页面');
           break;
         }
