@@ -159,7 +159,7 @@ export default async function handler(req, res) {
       return parsed;
     }
 
-    // 查询所有页面
+    // 查询所有页面，确保获取全部数据
     async function queryAllPages(databaseId) {
       let allPages = [];
       let hasMore = true;
@@ -182,21 +182,33 @@ export default async function handler(req, res) {
         });
 
         if (!response.ok) {
-          console.warn(`数据库 ${databaseId} 查询失败`);
+          console.warn(`数据库 ${databaseId} 查询失败: ${response.status} ${await response.text()}`);
           throw new Error(`HTTP ${response.status}: ${await response.text()}`);
         }
         
         const data = await response.json();
         const newPages = data.results || [];
         allPages = allPages.concat(newPages);
+        
+        console.log(`📦 已获取 ${allPages.length} 条记录 (当前页: ${newPages.length})`);
+        
+        // 更新同步进度到临时存储
+        try {
+          const progressInfo = {
+            current: allPages.length,
+            lastUpdate: new Date().toISOString()
+          };
+          // 将进度信息存储到临时文件，以便外部访问
+          fs.writeFileSync('/tmp/sync_progress.json', JSON.stringify(progressInfo));
+        } catch (e) {
+          console.log('⚠️ 无法更新同步进度文件:', e.message);
+        }
+
         hasMore = data.has_more;
         startCursor = data.next_cursor;
 
-        // 每获取页面显示进度
-        console.log(`📦 已获取 ${allPages.length} 条记录`);
-        
         // 检查执行时间，防止超时
-        if (process.env.VERCEL && Date.now() - startTime > 20000) { // 20秒后停止，留出处理时间
+        if (process.env.VERCEL && Date.now() - startTime > 28000) { // 28秒后停止，留出处理时间
           console.log('⏰ 接近超时限制，停止获取更多页面');
           break;
         }
