@@ -1,4 +1,4 @@
-﻿// index.js - HajihamiAPI 2.0.2 (修复语法错误版)
+﻿// index.js - HajihamiAPI 2.0.3 (集成云端缓存版)
 import dotenv from 'dotenv';
 dotenv.config();
 import fs from 'fs';
@@ -6,6 +6,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
 import express from 'express';
+import cloudCache from './cloud-cache-adapter.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -37,7 +38,7 @@ class NotionSync {
     try {
       const apiUrl = `https://api.bilibili.com/x/web-interface/view?bvid=${bvNumber}`;
       const response = await axios.get(apiUrl, {
-        timeout: 5000
+        timeout: 2000  // 降低超时时间为2秒
       });
 
       if (response.data) {
@@ -55,7 +56,16 @@ class NotionSync {
         }
       }
     } catch (error) {
-      // 重新抛出错误，让上级处理
+      // 检查错误类型，对于特定错误直接跳过
+      if (error.code === 'ECONNABORTED' ||  // 超时
+          error.response?.status === 412 || // 预处理错误
+          error.response?.status === 429 || // 频率限制
+          error.response?.status === 404 || // 资源不存在
+          error.response?.status >= 500) {  // 服务器错误
+        return null; // 直接返回null，跳过此封面
+      }
+      
+      // 重新抛出其他错误，让上级处理
       throw error;
     }
 
@@ -202,7 +212,9 @@ class NotionSync {
     try {
       while (hasMore) {
         pageCount++;
-        const body = { page_size: 100 };
+        const body = { 
+          page_size: 100 // 使用最大页面大小以减少请求数量
+        };
         
         if (startCursor) {
           body.start_cursor = startCursor;
@@ -231,8 +243,9 @@ class NotionSync {
         // 如果没有更多页面或没有游标，退出循环
         if (!hasMore || !startCursor) break;
         
-        // 短暂延迟避免速率限制
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // 根据API响应中的ratelimit信息调整延迟，或者使用更小的固定延迟
+        // 从100ms减少到20ms以提高速度，但仍需避免速率限制
+        await new Promise(resolve => setTimeout(resolve, 20));
       }
       
       console.log(`\n✅ 数据库查询完成，共 ${allPages.length} 条记录`);
@@ -363,20 +376,32 @@ class NotionSync {
         const coverUrl = await this.getBilibiliCover(bvNumber);
         if (coverUrl) return coverUrl;
 
-        // 如果失败了，记录错误但继续重试
+        // 如果失败了但没有抛出异常（即直接返回null），记录错误但继续重试
         lastError = `尝试${attempt}失败`;
       } catch (error) {
         lastError = error.message;
+        
         // 如果返回62002（视频不存在等），提前停止重试
         if (lastError && lastError.includes('62002')) {
           console.log(`🛑 BV号 ${bvNumber} 视频不存在或已删除，跳过`);
+          break;
+        }
+        
+        // 对于特定错误类型，直接跳过重试
+        if (error.message.includes('ECONNABORTED') ||  // 超时
+            error.message.includes('412') ||           // 预处理错误
+            error.message.includes('429') ||           // 频率限制
+            error.message.includes('404') ||           // 资源不存在
+            error.message.includes('500')) {           // 服务器错误
+          console.log(`⏭️  BV号 ${bvNumber} 遇到不可恢复错误，跳过重试`);
           break;
         }
       }
 
       // 最后一次尝试失败，不需要等待
       if (attempt < maxRetries) {
-        await new Promise(resolve => setTimeout(resolve, 1000)); // 1秒间隔
+        // 减少重试间隔时间，提高同步速度
+        await new Promise(resolve => setTimeout(resolve, 200)); // 从1秒减少到0.2秒
       }
     }
 
@@ -389,15 +414,22 @@ class NotionSync {
 
     try {
       console.log('🔧 解析数据中...');
-      const parsedPages = pages.map((page, index) => {
-        if (index % 100 === 0) {
-          process.stdout.write(`\r📊 解析进度: ${index + 1}/${pages.length}`);
-        }
+      // 使用更高效的方式解析数据，减少日志输出频率
+      const parsedPages = [];
+      const total = pages.length;
+      
+      for (let i = 0; i < total; i++) {
+        const page = pages[i];
         const parsed = this.parsePageProperties(page);
         // 添加notion更新时间用于比较
         parsed.last_edited_time = page.last_edited_time;
-        return parsed;
-      });
+        parsedPages.push(parsed);
+        
+        // 每500条记录输出一次进度，减少I/O操作
+        if ((i + 1) % 500 === 0 || i === total - 1) {
+          process.stdout.write(`\r📊 解析进度: ${i + 1}/${total}`);
+        }
+      }
       process.stdout.write('\n');
 
       // 增量更新模式：只处理需要更新的封面
@@ -439,21 +471,45 @@ class NotionSync {
         });
       }
 
-      // 获取B站封面链接（只获取需要的）
+      // 获取B站封面链接（只获取需要的）- 优化为并发处理
       if (pagesNeedingCoverFetch.length > 0) {
         console.log(`🖼️ 获取 ${pagesNeedingCoverFetch.length} 个B站封面信息中...`);
-
+        
+        // 设置并发限制，避免请求过多被限制
+        const CONCURRENT_LIMIT = 5;
+        const coverPromises = [];
+        
         for (let i = 0; i < pagesNeedingCoverFetch.length; i++) {
           const { index, bvNumber } = pagesNeedingCoverFetch[i];
           const page = parsedPages[index];
-
-          // 获取封面链接，支持3次重试
-          page.cover_url = await this.getBilibiliCoverWithRetry(bvNumber, 3);
-          page.cover_attempt_count = page.cover_url ? 0 : 3; // 记录尝试次数
-
-          process.stdout.write(`\r🖼️ 封面获取进度: ${i + 1}/${pagesNeedingCoverFetch.length} (${bvNumber}: ${page.cover_url ? '✅' : '❌'})`);
+          
+          // 创建获取封面的异步任务
+          const coverPromise = this.getBilibiliCoverWithRetry(bvNumber, 3)
+            .then(coverUrl => {
+              page.cover_url = coverUrl;
+              page.cover_attempt_count = page.cover_url ? 0 : 3; // 记录尝试次数
+              process.stdout.write(`\r🖼️ 封面获取进度: ${i + 1}/${pagesNeedingCoverFetch.length} (${bvNumber}: ${page.cover_url ? '✅' : '❌'})`);
+            })
+            .catch(error => {
+              console.error(`\n获取封面失败 ${bvNumber}:`, error.message);
+              page.cover_url = null;
+              page.cover_attempt_count = 3;
+            });
+          
+          coverPromises.push(coverPromise);
+          
+          // 控制并发数
+          if (coverPromises.length >= CONCURRENT_LIMIT) {
+            await Promise.allSettled(coverPromises.splice(0, CONCURRENT_LIMIT));
+          }
         }
-        process.stdout.write('\n');
+        
+        // 等待剩余的请求完成
+        if (coverPromises.length > 0) {
+          await Promise.allSettled(coverPromises);
+        }
+        
+        console.log('\n✅ 封面获取完成');
       } else {
         console.log('🖼️ 无需获取新的封面链接');
       }
@@ -489,18 +545,41 @@ class NotionSync {
 
         if (localPagesNeedingCoverFetch.length > 0) {
           console.log(`🖼️ 补全 ${localPagesNeedingCoverFetch.length} 个本地null封面...`);
-
+          
+          // 使用并发处理来加快封面补全
+          const CONCURRENT_LIMIT = 5;
+          const coverPromises = [];
+          
           for (let i = 0; i < localPagesNeedingCoverFetch.length; i++) {
             const { index, bvNumber } = localPagesNeedingCoverFetch[i];
             const page = mergedData[index];
-
-            // 获取封面链接，支持3次重试
-            page.cover_url = await this.getBilibiliCoverWithRetry(bvNumber, 3);
-            page.cover_attempt_count = page.cover_url ? 0 : (page.cover_attempt_count || 0) + 3;
-
-            process.stdout.write(`\r🖼️ 本地封面补全进度: ${i + 1}/${localPagesNeedingCoverFetch.length} (${bvNumber}: ${page.cover_url ? '✅' : '❌'})`);
+            
+            const coverPromise = this.getBilibiliCoverWithRetry(bvNumber, 3)
+              .then(coverUrl => {
+                page.cover_url = coverUrl;
+                page.cover_attempt_count = page.cover_url ? 0 : (page.cover_attempt_count || 0) + 3;
+                process.stdout.write(`\r🖼️ 本地封面补全进度: ${i + 1}/${localPagesNeedingCoverFetch.length} (${bvNumber}: ${page.cover_url ? '✅' : '❌'})`);
+              })
+              .catch(error => {
+                console.error(`\n补全封面失败 ${bvNumber}:`, error.message);
+                page.cover_url = null;
+                page.cover_attempt_count = page.cover_attempt_count ? page.cover_attempt_count + 3 : 3;
+              });
+            
+            coverPromises.push(coverPromise);
+            
+            // 控制并发数
+            if (coverPromises.length >= CONCURRENT_LIMIT) {
+              await Promise.allSettled(coverPromises.splice(0, CONCURRENT_LIMIT));
+            }
           }
-          process.stdout.write('\n');
+          
+          // 等待剩余的请求完成
+          if (coverPromises.length > 0) {
+            await Promise.allSettled(coverPromises);
+          }
+          
+          console.log('\n✅ 本地封面补全完成');
         } else {
           console.log('🖼️ 本地数据无null封面需要补全');
         }
@@ -678,6 +757,14 @@ class NotionSync {
     this.syncState.total_records = totalRecords;
     this.saveSyncState();
     
+    // 将所有同步的数据上传到云端缓存
+    if (totalRecords > 0) {
+      console.log('\n☁️  正在上传数据到云端缓存...');
+      const allSongs = this.getAllMusicData(); // 获取所有同步的数据
+      const netEaseSongs = allSongs.map(song => this.convertToNetEaseFormat(song));
+      await this.saveToCloudCache(netEaseSongs);
+    }
+    
     console.log('\n' + '='.repeat(50));
     console.log('🎉 同步完成!');
     console.log(`📊 统计信息:`);
@@ -686,6 +773,7 @@ class NotionSync {
     console.log(`   - 同步失败: ${failedCount}`);
     console.log(`   - 总记录数: ${totalRecords}`);
     console.log(`   - 数据目录: ./data/`);
+    console.log(`   - 云端缓存: 已更新`);
     console.log(`   - 下次同步: 实时监控中...\n`);
     
     return { 
@@ -888,11 +976,49 @@ class NotionSync {
     };
   }
 
+  // 保存数据到云端缓存
+  async saveToCloudCache(songs) {
+    if (!songs || songs.length === 0) {
+      console.log('⚠️  没有歌曲数据需要保存到云端');
+      return { success: false, message: '没有数据需要保存' };
+    }
+
+    try {
+      console.log(`☁️  正在保存 ${songs.length} 首歌曲到云端缓存...`);
+      const result = await cloudCache.saveSongs(songs);
+      
+      if (result.success) {
+        console.log(`✅ 成功保存 ${result.count || songs.length} 首歌曲到云端缓存`);
+      } else {
+        console.error('❌ 保存到云端缓存失败:', result.error);
+      }
+      
+      return result;
+    } catch (error) {
+      console.error('❌ 保存到云端缓存时发生错误:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // 从云端缓存获取所有歌曲
+  async getAllSongsFromCloud() {
+    try {
+      console.log('☁️  正在从云端缓存获取歌曲...');
+      const songs = await cloudCache.getAllSongs();
+      console.log(`✅ 从云端缓存获取 ${songs.length} 首歌曲`);
+      return songs;
+    } catch (error) {
+      console.error('❌ 从云端缓存获取歌曲失败:', error.message);
+      return [];
+    }
+  }
+
   // 启动音乐API服务器
   startMusicApiServer(port = 3456) {
     console.log('🎵 启动音乐API服务器');
     console.log(`🌐 服务器端口: ${port}`);
     console.log('📁 数据目录: ./data/');
+    console.log('☁️  云端缓存: 已启用');
 
     const app = express();
 
@@ -906,7 +1032,7 @@ class NotionSync {
     // 网易云音乐API兼容路由
 
     // 歌曲详情
-    app.get('/song/detail', (req, res) => {
+    app.get('/song/detail', async (req, res) => {
       try {
         const ids = req.query.ids;
         if (!ids) {
@@ -914,7 +1040,16 @@ class NotionSync {
         }
 
         const idList = ids.split(',').map(id => parseInt(id));
-        const allSongs = this.getAllMusicData();
+        
+        // 优先从云端缓存获取数据
+        let allSongs = await this.getAllSongsFromCloud();
+        
+        // 如果云端缓存不可用，回退到本地数据
+        if (!allSongs || allSongs.length === 0) {
+          console.log('⚠️  云端缓存不可用，使用本地数据');
+          allSongs = this.getAllMusicData();
+        }
+        
         const netEaseSongs = allSongs.map(song => this.convertToNetEaseFormat(song));
 
         // 过滤匹配的歌曲
@@ -949,14 +1084,22 @@ class NotionSync {
     });
 
     // 搜索歌曲
-    app.get('/search', (req, res) => {
+    app.get('/search', async (req, res) => {
       try {
         const keywords = req.query.keywords;
         if (!keywords) {
           return res.json({ code: 400, result: { songs: [] } });
         }
 
-        const allSongs = this.getAllMusicData();
+        // 优先从云端缓存获取数据
+        let allSongs = await this.getAllSongsFromCloud();
+        
+        // 如果云端缓存不可用，回退到本地数据
+        if (!allSongs || allSongs.length === 0) {
+          console.log('⚠️  云端缓存不可用，使用本地数据');
+          allSongs = this.getAllMusicData();
+        }
+        
         const netEaseSongs = allSongs.map(song => this.convertToNetEaseFormat(song));
 
         // 简单关键词匹配
@@ -979,9 +1122,17 @@ class NotionSync {
     });
 
     // 获取所有歌曲
-    app.get('/songs', (req, res) => {
+    app.get('/songs', async (req, res) => {
       try {
-        const allSongs = this.getAllMusicData();
+        // 优先从云端缓存获取数据
+        let allSongs = await this.getAllSongsFromCloud();
+        
+        // 如果云端缓存不可用，回退到本地数据
+        if (!allSongs || allSongs.length === 0) {
+          console.log('⚠️  云端缓存不可用，使用本地数据');
+          allSongs = this.getAllMusicData();
+        }
+        
         const netEaseSongs = allSongs.map(song => this.convertToNetEaseFormat(song));
 
         res.json({

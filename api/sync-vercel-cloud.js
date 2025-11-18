@@ -1,5 +1,5 @@
-// Vercel-specific sync endpoint that fetches and returns data immediately
-// This works around Vercel's temporary file system limitation
+// Vercel-specific sync endpoint with cloud cache integration
+import cloudCache from '../cloud-cache-adapter.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') {
@@ -52,14 +52,14 @@ export default async function handler(req, res) {
       return bvMatch ? bvMatch[0] : null;
     }
 
-    // 获取B站视频封面
+    // 获取B站视频封面 - 使用2秒超时并跳过错误
     async function getBilibiliCover(bvNumber) {
       if (!bvNumber || process.env.SKIP_COVERS === 'true') return null;
 
       try {
         const axios = (await import('axios')).default;
         const apiUrl = `https://api.bilibili.com/x/web-interface/view?bvid=${bvNumber}`;
-        const response = await axios.get(apiUrl, { timeout: 2000 }); // 降低超时时间为2秒
+        const response = await axios.get(apiUrl, { timeout: 2000 }); // 降低超时时间
 
         if (response.data) {
           if (response.data.code === 0) {
@@ -156,13 +156,13 @@ export default async function handler(req, res) {
       return parsed;
     }
 
-    // 查询数据库所有记录 - 优化版本，减少页面限制
+    // 查询数据库所有记录 - 优化版本
     async function queryAllDatabasePages(databaseId) {
       let allPages = [];
       let hasMore = true;
       let startCursor = null;
       let pageCount = 0;
-      const maxPages = 20; // 增加页面限制，但仍需要在时间限制内完成
+      const maxPages = 20; // 增加页面限制
 
       while (hasMore && pageCount < maxPages) {
         pageCount++;
@@ -189,13 +189,13 @@ export default async function handler(req, res) {
         hasMore = data.has_more;
         startCursor = data.next_cursor;
 
-        // 每获取100页显示进度
+        // 每获取一定数量页面显示进度
         if (pageCount % 5 === 0) {
           console.log(`📦 已获取 ${allPages.length} 条记录 (第${pageCount}页)`);
         }
         
         // 检查执行时间，防止超时
-        if (process.env.VERCEL && Date.now() - new Date().setTime(Date.now() - 0) > 45000) { // 45秒后停止以预留缓冲时间
+        if (process.env.VERCEL && Date.now() - new Date().setTime(Date.now() - 0) > 45000) { // 45秒后停止
           console.log('⏰ 接近超时限制，停止获取更多页面');
           break;
         }
@@ -206,7 +206,7 @@ export default async function handler(req, res) {
     }
 
     // 获取并处理数据
-    const dbIds = databaseIds.split(',').map(id => id.trim()); // 支持多个数据库ID
+    const dbIds = databaseIds.split(',').map(id => id.trim());
     console.log(`🔄 开始处理 ${dbIds.length} 个数据库:`, dbIds);
 
     let allPages = [];
@@ -219,12 +219,23 @@ export default async function handler(req, res) {
 
     // 解析数据
     console.log('🔧 解析数据中...');
-    const parsedPages = allPages.map(page => ({
-      ...parsePageProperties(page),
-      last_edited_time: page.last_edited_time
-    }));
+    const parsedPages = [];
+    const total = allPages.length;
+    
+    for (let i = 0; i < total; i++) {
+      const page = allPages[i];
+      const parsed = parsePageProperties(page);
+      parsed.last_edited_time = page.last_edited_time;
+      parsedPages.push(parsed);
+      
+      // 每500条记录输出一次进度
+      if ((i + 1) % 500 === 0 || i === total - 1) {
+        process.stdout.write(`\r📊 解析进度: ${i + 1}/${total}`);
+      }
+    }
+    process.stdout.write('\n');
 
-    // 获取封面（限制数量避免超时）- 优化封面获取逻辑
+    // 获取封面（限制数量避免超时）- 使用并发处理
     console.log('🖼️ 获取B站封面...');
     const maxCoversToFetch = 30; // 减少封面数量以避免超时
     const coverPromises = [];
@@ -233,7 +244,7 @@ export default async function handler(req, res) {
     for (let i = 0; i < Math.min(parsedPages.length, maxCoversToFetch); i++) {
       const page = parsedPages[i];
       if (page.bv_number) {
-        // 创建封面获取Promise，但不立即等待
+        // 创建封面获取Promise
         const coverPromise = getBilibiliCover(page.bv_number).then(coverUrl => {
           page.cover_url = coverUrl;
           console.log(`🖼️ ${i + 1}/${Math.min(parsedPages.length, maxCoversToFetch)} - ${page.bv_number}: ${page.cover_url ? '✅' : '❌'}`);
@@ -244,9 +255,9 @@ export default async function handler(req, res) {
         
         coverPromises.push(coverPromise);
         
-        // 限制并发数，避免请求过多导致超时
+        // 限制并发数
         if (coverPromises.length >= 5) {  // 在Vercel环境中保持较小的并发数
-          await Promise.allSettled(coverPromises.splice(0, 5)); // 使用Promise.allSettled处理可能的错误
+          await Promise.allSettled(coverPromises.splice(0, 5));
         }
       }
     }
@@ -289,6 +300,21 @@ export default async function handler(req, res) {
         style: songData.style
       };
     });
+
+    // 尝试将数据保存到云端缓存
+    if (songs.length > 0) {
+      console.log(`☁️  尝试保存 ${songs.length} 首歌曲到云端缓存...`);
+      try {
+        const cloudResult = await cloudCache.saveSongs(songs);
+        if (cloudResult.success) {
+          console.log(`✅ 云端缓存更新成功`);
+        } else {
+          console.error(`❌ 云端缓存更新失败:`, cloudResult.error);
+        }
+      } catch (error) {
+        console.error(`❌ 保存到云端缓存时出错:`, error.message);
+      }
+    }
 
     console.log(`✅ 同步完成，获取 ${songs.length} 首歌曲`);
 

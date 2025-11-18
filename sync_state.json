@@ -1,11 +1,11 @@
 {
-  "last_sync": "2025-11-15T09:20:12.981Z",
+  "last_sync": "2025-11-18T02:06:16.675Z",
   "database_states": {
     "24c1f93f-1512-819b-8c63-d93c38f5babe": {
-      "last_sync": "2025-11-15T09:20:12.980Z",
+      "last_sync": "2025-11-18T02:06:16.675Z",
       "title": "哈基米MUSIC——点击进入数据库（右侧🔍搜索歌名/up主/风格）",
       "record_count": 4957,
-      "file_path": "C:\\Users\\LEE_S\\Desktop\\web\\notion-api-project\\data\\db_24c1f93f_2025-11-15.json",
+      "file_path": "/storage/emulated/0/hajihami/data/db_24c1f93f_2025-11-18.json",
       "sync_mode": "incremental"
     }
   },

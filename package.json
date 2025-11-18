@@ -1,9 +1,12 @@
 {
   "name": "hajihami-api",
-  "version": "2.0.1",
+  "version": "2.0.3",
   "description": "实时同步Notion数据库到本地JSON文件",
   "main": "index.js",
   "type": "module",
+  "bin": {
+    "hajihami": "./tools/cli.js"
+  },
   "scripts": {
     "start": "node index.js api",
     "api": "node index.js api",
@@ -15,11 +18,18 @@
     "stats": "node index.js stats",
     "clean": "node index.js clean",
     "forcesync": "node index.js sync --full",
-    "forcerealtime": "node index.js realtime --full"
+    "forcerealtime": "node index.js realtime --full",
+    "vercel:build": "echo 'Build completed'",
+    "cli": "node tools/cli.js",
+    "hajihami": "node tools/cli.js"
   },
   "dependencies": {
     "axios": "^1.6.0",
     "dotenv": "^16.0.0",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "@supabase/supabase-js": "^2.45.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

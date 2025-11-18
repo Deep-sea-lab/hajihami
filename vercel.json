@@ -3,45 +3,110 @@
   "builds": [
     {
       "src": "api/sync-vercel.js",
-      "use": "@vercel/node"
+      "use": "@vercel/node",
+      "config": {
+        "includeFiles": ["node_modules/**"]
+      }
+    },
+    {
+      "src": "api/sync-vercel-cloud.js",
+      "use": "@vercel/node",
+      "config": {
+        "includeFiles": ["node_modules/**"]
+      }
     },
     {
       "src": "api/songs-vercel.js",
-      "use": "@vercel/node"
+      "use": "@vercel/node",
+      "config": {
+        "includeFiles": ["node_modules/**"]
+      }
     },
     {
       "src": "api/search-vercel.js",
-      "use": "@vercel/node"
+      "use": "@vercel/node",
+      "config": {
+        "includeFiles": ["node_modules/**"]
+      }
     },
     {
       "src": "api/ping-vercel.js",
-      "use": "@vercel/node"
+      "use": "@vercel/node",
+      "config": {
+        "includeFiles": ["node_modules/**"]
+      }
     },
     {
       "src": "api/favicon.js",
-      "use": "@vercel/node"
+      "use": "@vercel/node",
+      "config": {
+        "includeFiles": ["node_modules/**"]
+      }
+    },
+    {
+      "src": "api/cron-vercel.js",
+      "use": "@vercel/node",
+      "config": {
+        "includeFiles": ["node_modules/**"]
+      }
     }
   ],
   "routes": [
     {
       "src": "/api/sync",
-      "dest": "/api/sync-vercel.js"
+      "dest": "/api/sync-vercel-cloud.js",
+      "methods": ["GET", "POST"]
     },
     {
       "src": "/api/songs",
-      "dest": "/api/songs-vercel.js"
+      "dest": "/api/songs-vercel.js",
+      "methods": ["GET"]
     },
     {
       "src": "/api/search",
-      "dest": "/api/search-vercel.js"
+      "dest": "/api/search-vercel.js",
+      "methods": ["GET"]
     },
     {
       "src": "/api/ping",
-      "dest": "/api/ping-vercel.js"
+      "dest": "/api/ping-vercel.js",
+      "methods": ["GET"]
+    },
+    {
+      "src": "/api/cron",
+      "dest": "/api/cron-vercel.js"
     },
     {
       "src": "/favicon.ico",
       "dest": "/api/favicon.js"
+    }
+  ],
+  "functions": {
+    "api/sync-vercel.js": {
+      "maxDuration": 30,
+      "memory": 1024
+    },
+    "api/sync-vercel-cloud.js": {
+      "maxDuration": 30,
+      "memory": 1024
+    },
+    "api/songs-vercel.js": {
+      "maxDuration": 10,
+      "memory": 512
+    },
+    "api/search-vercel.js": {
+      "maxDuration": 10,
+      "memory": 512
+    },
+    "api/cron-vercel.js": {
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron",
+      "schedule": "0 0 * * *"  // 每天 UTC 时间 00:00 运行
     }
   ]
 }
