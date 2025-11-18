@@ -352,10 +352,11 @@ CREATE INDEX idx_songs_creation_time ON songs(creation_time);
   // 清空所有歌曲数据，但保留表结构
   async clearAllSongs() {
     try {
+      // 使用or条件创建一个总是为真的查询来删除所有记录
       const { error } = await this.supabase
         .from('songs')
         .delete()
-        .match({}); // 删除所有记录
+        .or('id.gt.0,id.eq.0'); // 删除ID大于0或等于0的所有记录（即所有记录）
 
       if (error) {
         console.error('清空歌曲数据失败:', error);
