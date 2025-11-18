@@ -117,13 +117,20 @@ CREATE INDEX idx_songs_creation_time ON songs(creation_time);
         });
 
       if (error) {
-        console.error('记录同步时间失败:', error);
+        // 检查是否是表不存在的错误
+        if (error.code === '42P01' || error.message.includes('sync_info')) {
+          console.log('⚠️ sync_info表不存在，跳过同步时间记录 (这很正常，如果不需要记录同步时间可忽略)');
+          // 不记录错误，因为表可能未创建
+        } else {
+          console.error('记录同步时间失败:', error);
+        }
         // 不抛出错误，因为这不应该影响主要的同步功能
       } else {
         console.log(`✅ 同步时间已记录: ${syncInfo.last_sync_time}`);
       }
     } catch (error) {
-      console.error('记录同步时间时发生错误:', error);
+      // 捕获并处理所有错误，但不中断主要功能
+      console.log('⚠️ sync_info表可能不存在，跳过同步时间记录:', error.message);
       // 不抛出错误，因为这不应该影响主要的同步功能
     }
   }
@@ -319,21 +326,22 @@ CREATE INDEX idx_songs_creation_time ON songs(creation_time);
         .limit(1);
 
       if (error) {
-        console.error('获取最后同步信息失败:', error);
-        // 如果表不存在或查询失败，返回null
-        if (error.code === '42P01') { // 表不存在错误码
-          console.log('sync_info表不存在，将使用getAllSongs的最近更新时间作为同步时间');
+        // 如果表不存在，返回null（不记录错误，因为这是正常情况）
+        if (error.code === '42P01' || error.message.includes('sync_info')) {
+          console.log('⚠️ sync_info表不存在，这很正常，如果需要请手动创建该表');
           // 作为备选方案，返回最近歌曲的更新时间
           const lastUpdated = await this.getLastUpdated();
           return { lastSyncTime: lastUpdated };
+        } else {
+          console.error('获取最后同步信息失败:', error);
+          return null;
         }
-        return null;
       }
 
       return data && data[0] ? data[0] : { lastSyncTime: await this.getLastUpdated() };
     } catch (error) {
-      console.error('获取最后同步信息时发生错误:', error);
-      return null;
+      console.log('⚠️ sync_info表不存在，返回默认同步信息:', error.message);
+      return { lastSyncTime: await this.getLastUpdated() };
     }
   }
 
