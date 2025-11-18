@@ -148,25 +148,26 @@ export default async function handler(req, res) {
       return parsed;
     }
 
-    // 查询最近更新的页面 - 增量同步优化
+    // 查询最近更新的页面 - 优化版完整同步
     async function queryRecentlyUpdatedPages(databaseId, lastSyncTime = null) {
       let allPages = [];
       let hasMore = true;
       let startCursor = null;
       let pageCount = 0;
-      const maxPages = 5; // 进一步限制页面数，加速增量同步
+      const maxPages = 100; // 增加最大页面数以获取更多内容
 
-      // 设置过滤器，只获取最近修改的页面
+      // 如果没有指定lastSyncTime，则获取所有页面（完整同步）
+      // 如果指定了lastSyncTime，则只获取该时间后更新的页面（增量同步）
       const filter = lastSyncTime ? {
         timestamp: 'last_edited_time',
-        // 只获取最近7天内修改的页面，可根据需要调整
-        gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+        // 获取指定时间之后修改的页面
+        gte: new Date(lastSyncTime).toISOString()
       } : null;
 
-      while (hasMore && pageCount < maxPages) {
+      while (hasMore) {
         pageCount++;
         const body = { 
-          page_size: 50, // 减少页面大小以加速
+          page_size: 100, // 增加页面大小以提高效率
         };
 
         if (filter) {
@@ -188,11 +189,16 @@ export default async function handler(req, res) {
 
         if (!response.ok) {
           console.warn(`数据库 ${databaseId} 查询失败，尝试不带过滤器查询`);
-          // 如果带过滤器查询失败，尝试获取所有页面（但限制数量）
+          // 如果带过滤器查询失败，尝试获取所有页面
           const fallbackBody = { 
-            page_size: 50,
+            page_size: 100, // 增加页面大小
             start_cursor: startCursor || undefined
           };
+          
+          if (filter) {
+            fallbackBody.filter = filter; // 仍尝试应用过滤器
+          }
+          
           const fallbackResponse = await fetch(`${baseURL}/databases/${databaseId}/query`, {
             method: 'POST',
             headers: headers,
@@ -216,17 +222,11 @@ export default async function handler(req, res) {
           startCursor = data.next_cursor;
         }
 
-        // 限制总页数以避免超时
-        if (allPages.length > 200) { // 限制最多200条记录
-          console.log('⚠️ 达到记录数量限制，停止获取更多页面');
-          break;
-        }
-
         // 每获取页面显示进度
         console.log(`📦 已获取 ${allPages.length} 条记录 (第${pageCount}页)`);
         
-        // 检查执行时间，防止超时
-        if (process.env.VERCEL && Date.now() - new Date().setTime(Date.now() - 0) > 25000) { // 25秒后停止
+        // 检查执行时间，防止超时（但允许更多时间）
+        if (process.env.VERCEL && Date.now() - new Date().setTime(Date.now() - 0) > 45000) { // 45秒后停止，提供更多时间
           console.log('⏰ 接近超时限制，停止获取更多页面');
           break;
         }
@@ -236,20 +236,34 @@ export default async function handler(req, res) {
       return allPages;
     }
 
-    // 获取并处理数据 - 只处理最近更新的页面
+    // 获取上次同步时间，用于增量同步
+    let lastSyncTime = null;
+    try {
+      const lastSyncInfo = await cloudCache.getLastSyncInfo();
+      if (lastSyncInfo && lastSyncInfo.lastSyncTime) {
+        lastSyncTime = lastSyncInfo.lastSyncTime;
+        console.log(`🔄 使用上次同步时间进行增量同步: ${lastSyncTime}`);
+      } else {
+        console.log(`🔄 首次同步，获取所有数据...`);
+      }
+    } catch (error) {
+      console.log(`⚠️ 获取上次同步时间失败，执行完整同步:`, error.message);
+    }
+
+    // 获取并处理数据 - 基于上次同步时间进行增量同步
     const dbIds = databaseIds.split(',').map(id => id.trim());
-    console.log(`🔄 开始处理 ${dbIds.length} 个数据库（增量同步模式）:`, dbIds);
+    console.log(`🔄 开始处理 ${dbIds.length} 个数据库（基于时间戳的增量同步）:`, dbIds);
 
     let allPages = [];
     
     for (const dbId of dbIds) {
       console.log(`🔄 开始处理数据库: ${dbId}`);
-      const pages = await queryRecentlyUpdatedPages(dbId);
+      const pages = await queryRecentlyUpdatedPages(dbId, lastSyncTime);
       allPages = allPages.concat(pages);
     }
 
-    // 如果没有获取到新页面，从云端缓存获取所有数据作为备选
-    if (allPages.length === 0) {
+    // 如果没有获取到新页面且存在上次同步时间，从云端缓存获取所有数据作为备选
+    if (allPages.length === 0 && lastSyncTime) {
       console.log('🔍 没有新数据，尝试从云端缓存获取最新数据...');
       try {
         const cachedSongs = await cloudCache.getAllSongs();

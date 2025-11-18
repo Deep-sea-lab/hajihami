@@ -74,6 +74,15 @@ class CloudCacheAdapter {
     return await this.cache.getLastUpdated();
   }
 
+  // 获取最后同步信息
+  async getLastSyncInfo() {
+    if (!this.cache) {
+      throw new Error('缓存未初始化');
+    }
+    
+    return await this.cache.getLastSyncInfo();
+  }
+
   // 检查缓存是否可用
   async isAvailable() {
     try {

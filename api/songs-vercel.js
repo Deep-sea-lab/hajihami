@@ -45,12 +45,23 @@ export default async function handler(req, res) {
 
     // 如果云端缓存不可用，使用本地缓存策略
     const now = Date.now();
-    if (!cachedData || !lastSyncTime || (now - lastSyncTime) > CACHE_DURATION) {
-      console.log('📡 /api/songs: 本地缓存过期或不存在，正在调用同步...');
+    
+    // 检查是否有强制刷新参数
+    const forceRefresh = req.query.force === 'true' || req.query.refresh === 'true';
+    const getAllSongs = req.query.all === 'true' || req.query.getAll === 'true';
+    
+    if (forceRefresh || getAllSongs || !cachedData || !lastSyncTime || (now - lastSyncTime) > CACHE_DURATION) {
+      if (forceRefresh) {
+        console.log('🔄 强制刷新模式，调用同步API...');
+      } else if (getAllSongs) {
+        console.log('🔄 获取所有歌曲模式，调用同步API...');
+      } else {
+        console.log('📡 /api/songs: 本地缓存过期或不存在，正在调用同步...');
+      }
 
       // 添加超时控制
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 25000); // 25秒超时
+      const timeoutId = setTimeout(() => controller.abort(), 45000); // 增加超时时间到45秒
 
       try {
         // 调用同步API获取数据

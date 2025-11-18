@@ -85,10 +85,46 @@ CREATE INDEX idx_songs_creation_time ON songs(creation_time);
       }
 
       console.log(`✅ 成功保存 ${uniqueSongs.length} 首歌曲到云端缓存`);
+      
+      // 记录同步时间
+      await this.recordSyncTime();
+      
       return { success: true, count: uniqueSongs.length };
     } catch (error) {
       console.error('保存歌曲数据时发生错误:', error);
       return { success: false, error: error.message };
+    }
+  }
+
+  // 记录同步时间
+  async recordSyncTime() {
+    try {
+      const syncInfo = {
+        id: 1, // 固定ID，总是更新同一条记录
+        last_sync_time: new Date().toISOString(),
+        created_at: new Date().toISOString()
+      };
+
+      // 使用upsert插入或更新同步信息
+      const { error } = await this.supabase
+        .from('sync_info')
+        .upsert([{
+          id: syncInfo.id,
+          last_sync_time: syncInfo.last_sync_time,
+          created_at: syncInfo.created_at
+        }], { 
+          onConflict: 'id' 
+        });
+
+      if (error) {
+        console.error('记录同步时间失败:', error);
+        // 不抛出错误，因为这不应该影响主要的同步功能
+      } else {
+        console.log(`✅ 同步时间已记录: ${syncInfo.last_sync_time}`);
+      }
+    } catch (error) {
+      console.error('记录同步时间时发生错误:', error);
+      // 不抛出错误，因为这不应该影响主要的同步功能
     }
   }
 
@@ -245,6 +281,36 @@ CREATE INDEX idx_songs_creation_time ON songs(creation_time);
       return data && data[0] ? data[0].updated_at : null;
     } catch (error) {
       console.error('获取最后更新时间时发生错误:', error);
+      return null;
+    }
+  }
+
+  // 获取最后同步信息
+  async getLastSyncInfo() {
+    try {
+      // 创建同步信息表（如果不存在）
+      // 在实际部署中，需要先在Supabase控制台中创建此表
+      const { data, error } = await this.supabase
+        .from('sync_info')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (error) {
+        console.error('获取最后同步信息失败:', error);
+        // 如果表不存在或查询失败，返回null
+        if (error.code === '42P01') { // 表不存在错误码
+          console.log('sync_info表不存在，将使用getAllSongs的最近更新时间作为同步时间');
+          // 作为备选方案，返回最近歌曲的更新时间
+          const lastUpdated = await this.getLastUpdated();
+          return { lastSyncTime: lastUpdated };
+        }
+        return null;
+      }
+
+      return data && data[0] ? data[0] : { lastSyncTime: await this.getLastUpdated() };
+    } catch (error) {
+      console.error('获取最后同步信息时发生错误:', error);
       return null;
     }
   }
