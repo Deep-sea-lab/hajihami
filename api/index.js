@@ -1,0 +1,20 @@
+// API 根路径路由
+export default function handler(req, res) {
+  res.status(200).json({
+    message: "HajihamiAPI 服务运行中",
+    version: "2.0.3",
+    endpoints: {
+      sync: "/api/sync",
+      songs: "/api/songs", 
+      search: "/api/search",
+      ping: "/api/ping"
+    },
+    documentation: "请访问 /api/songs, /api/search, /api/sync 等端点"
+  });
+}
+
+export const config = {
+  api: {
+    responseLimit: '10mb',
+  },
+};
