@@ -3,8 +3,8 @@ import cloudCache from '../cloud-cache-adapter.js';
 import fs from 'fs';
 import path from 'path';
 
-// 本地缓存路径
-const LOCAL_CACHE_DIR = path.join(process.cwd(), 'data');
+// 本地缓存路径 - 在Vercel环境中使用/tmp目录
+const LOCAL_CACHE_DIR = '/tmp/data';
 const LOCAL_CACHE_FILE = path.join(LOCAL_CACHE_DIR, 'songs.json');
 
 // 确保本地缓存目录存在

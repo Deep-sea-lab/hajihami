@@ -138,9 +138,9 @@ CREATE INDEX idx_songs_creation_time ON songs(creation_time);
       let hasMore = true;
 
       while (hasMore) {
-        const { data, error, count } = await this.supabase
+        const { data, error } = await this.supabase
           .from('songs')
-          .select('*', { count: 'exact' })
+          .select('*', { count: 'estimated' }) // 使用估计计数提高性能
           .range(offset, offset + limit - 1)
           .order('created_at', { ascending: false });
 
