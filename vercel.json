@@ -24,6 +24,10 @@
     "api/favicon.js": {
       "maxDuration": 10,
       "memory": 128
+    },
+    "api/index.js": {
+      "maxDuration": 10,
+      "memory": 128
     }
   },
   "routes": [
@@ -59,7 +63,7 @@
   "crons": [
     {
       "path": "/api/cron",
-      "schedule": "0 0 * * *"
+      "schedule": "0 0 * * *"  // 每天 UTC 时间 00:00 运行
     }
   ]
 }
