@@ -148,13 +148,12 @@ export default async function handler(req, res) {
       return parsed;
     }
 
-    // 查询最近更新的页面 - 优化版完整同步
+    // 查询所有页面（移除数量限制以获取全部数据）
     async function queryRecentlyUpdatedPages(databaseId, lastSyncTime = null) {
       let allPages = [];
       let hasMore = true;
       let startCursor = null;
-      let pageCount = 0;
-      const maxPages = 100; // 增加最大页面数以获取更多内容
+      const startTime = new Date().getTime(); // 初始化开始时间
 
       // 如果没有指定lastSyncTime，则获取所有页面（完整同步）
       // 如果指定了lastSyncTime，则只获取该时间后更新的页面（增量同步）
@@ -164,8 +163,7 @@ export default async function handler(req, res) {
         gte: new Date(lastSyncTime).toISOString()
       } : null;
 
-      while (hasMore) {
-        pageCount++;
+      while (hasMore) { // 移除页面数限制以获取全部数据
         const body = { 
           page_size: 100, // 增加页面大小以提高效率
         };
@@ -191,7 +189,7 @@ export default async function handler(req, res) {
           console.warn(`数据库 ${databaseId} 查询失败，尝试不带过滤器查询`);
           // 如果带过滤器查询失败，尝试获取所有页面
           const fallbackBody = { 
-            page_size: 100, // 增加页面大小
+            page_size: 100,
             start_cursor: startCursor || undefined
           };
           
@@ -223,10 +221,10 @@ export default async function handler(req, res) {
         }
 
         // 每获取页面显示进度
-        console.log(`📦 已获取 ${allPages.length} 条记录 (第${pageCount}页)`);
+        console.log(`📦 已获取 ${allPages.length} 条记录`);
         
-        // 检查执行时间，防止超时（但允许更多时间）
-        if (process.env.VERCEL && Date.now() - new Date().setTime(Date.now() - 0) > 45000) { // 45秒后停止，提供更多时间
+        // 检查执行时间，防止超时
+        if (process.env.VERCEL && Date.now() - startTime > 20000) { // 20秒后停止，留出处理时间
           console.log('⏰ 接近超时限制，停止获取更多页面');
           break;
         }
