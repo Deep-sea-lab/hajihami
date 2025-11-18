@@ -370,19 +370,14 @@ export default async function handler(req, res) {
       }
     }
 
-    // 返回完整的当前数据
-    const allCurrentSongs = newSongsToSave.length > 0 
-      ? [...cachedSongs, ...newSongsToSave] 
-      : cachedSongs;
-
+    // 只返回同步统计信息，不返回完整数据以减少响应大小
     const response = {
       code: 200,
       success: true,
-      data: allCurrentSongs,
-      total: allCurrentSongs.length,
       newAdded: newSongsToSave.length,
+      total: cachedSongs.length + newSongsToSave.length, // 显示总数
       sync_time: new Date().toISOString(),
-      message: `增量同步完成，新增/更新 ${newSongsToSave.length} 首歌曲，总计 ${allCurrentSongs.length} 首`
+      message: `增量同步完成，新增/更新 ${newSongsToSave.length} 首歌曲`
     };
 
     console.log(`✅ 增量同步完成，新增/更新 ${newSongsToSave.length} 首歌曲`);
