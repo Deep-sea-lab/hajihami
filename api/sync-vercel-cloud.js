@@ -370,11 +370,12 @@ export default async function handler(req, res) {
       }
     }
 
-    // 只返回同步统计信息，不返回完整数据以减少响应大小
+    // 返回同步统计信息以及新增/更新的歌曲详细信息
     const response = {
       code: 200,
       success: true,
       newAdded: newSongsToSave.length,
+      updatedSongs: newSongsToSave, // 返回新增/更新的歌曲信息
       total: cachedSongs.length + newSongsToSave.length, // 显示总数
       sync_time: new Date().toISOString(),
       message: `增量同步完成，新增/更新 ${newSongsToSave.length} 首歌曲`
