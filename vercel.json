@@ -2,7 +2,7 @@
   "version": 2,
   "functions": {
     "api/sync-vercel-cloud.js": {
-      "maxDuration": 30,
+      "maxDuration": 60,
       "memory": 1024
     },
     "api/songs-vercel.js": {

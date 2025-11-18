@@ -12,9 +12,3 @@ export default function handler(req, res) {
     documentation: "请访问 /api/songs, /api/search, /api/sync 等端点"
   });
 }
-
-export const config = {
-  api: {
-    responseLimit: '10mb',
-  },
-};

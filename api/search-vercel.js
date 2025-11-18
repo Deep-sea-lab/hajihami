@@ -68,7 +68,7 @@ export default async function handler(req, res) {
       const timeoutId = setTimeout(() => controller.abort(), 25000); // 25秒超时
       
       try {
-        const syncResponse = await fetch(`${process.env.VERCEL_URL || 'http://localhost:3000'}/api/sync`, {
+        const syncResponse = await fetch(`${process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000'}/api/sync`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           signal: controller.signal

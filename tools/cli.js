@@ -100,7 +100,7 @@ class HajihamiCLI {
     // 简单的健康检查
     console.log('🔍 检查本地 API 服务...');
     try {
-      const { NotionSync } = await import('./index.js');
+      const { NotionSync } = await import('../index.js');
       const apiKey = process.env.NOTION_API_KEY;
       
       if (apiKey) {
@@ -144,7 +144,7 @@ class HajihamiCLI {
     console.log('📚 数据库列表...');
     
     try {
-      const { NotionSync } = await import('./index.js');
+      const { NotionSync } = await import('../index.js');
       const apiKey = process.env.NOTION_API_KEY;
       
       if (!apiKey) {

@@ -54,7 +54,7 @@ export default async function handler(req, res) {
 
       try {
         // 调用同步API获取数据
-        const syncResponse = await fetch(`${process.env.VERCEL_URL || 'http://localhost:3000'}/api/sync`, {
+        const syncResponse = await fetch(`${process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000'}/api/sync`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           signal: controller.signal
