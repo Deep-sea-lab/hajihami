@@ -6,12 +6,13 @@ export default function handler(req, res) {
     endpoints: {
       sync: "/api/sync",
       completeSync: "/api/complete-sync",
+      batchSync: "/api/batch-sync",
       songs: "/api/songs", 
       search: "/api/search",
       ping: "/api/ping",
       clearCache: "/api/clear-cache",
       syncProgress: "/api/sync-progress"
     },
-    documentation: "请访问 /api/songs, /api/search, /api/sync, /api/complete-sync, /api/clear-cache, /api/sync-progress 等端点"
+    documentation: "请访问 /api/songs, /api/search, /api/sync, /api/complete-sync, /api/batch-sync, /api/clear-cache, /api/sync-progress 等端点"
   });
 }

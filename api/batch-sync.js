@@ -1,4 +1,4 @@
-// Vercel云函数：完整的Notion数据获取和同步到云端缓存
+// Vercel云函数：分批同步Notion数据到云端缓存
 import cloudCache from '../cloud-cache-adapter.js';
 import fs from 'fs';
 import path from 'path';
@@ -28,7 +28,7 @@ export default async function handler(req, res) {
   res.setHeader('Surrogate-Control', 'no-store');
 
   try {
-    console.log('🚀 开始完整的Notion数据同步流程...');
+    console.log('🚀 开始分批同步Notion数据流程...');
 
     // 1. 获取环境变量
     const apiKey = process.env.NOTION_API_KEY;
@@ -382,4 +382,3 @@ export default async function handler(req, res) {
     });
   }
 }
-
