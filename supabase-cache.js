@@ -348,6 +348,27 @@ CREATE INDEX idx_songs_creation_time ON songs(creation_time);
       return { success: false, error: error.message };
     }
   }
+
+  // 清空所有歌曲数据，但保留表结构
+  async clearAllSongs() {
+    try {
+      const { error } = await this.supabase
+        .from('songs')
+        .delete()
+        .match({}); // 删除所有记录
+
+      if (error) {
+        console.error('清空歌曲数据失败:', error);
+        throw error;
+      }
+
+      console.log('✅ 所有歌曲数据已清空');
+      return { success: true, message: '所有歌曲数据已清空' };
+    } catch (error) {
+      console.error('清空歌曲数据时发生错误:', error);
+      return { success: false, error: error.message };
+    }
+  }
 }
 
 export default SupabaseCache;

@@ -93,6 +93,15 @@ class CloudCacheAdapter {
       return false;
     }
   }
+
+  // 清空所有歌曲数据，但保留表结构
+  async clearAllSongs() {
+    if (!this.cache) {
+      throw new Error('缓存未初始化');
+    }
+    
+    return await this.cache.clearAllSongs();
+  }
 }
 
 // 导出单例实例

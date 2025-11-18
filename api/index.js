@@ -7,8 +7,9 @@ export default function handler(req, res) {
       sync: "/api/sync",
       songs: "/api/songs", 
       search: "/api/search",
-      ping: "/api/ping"
+      ping: "/api/ping",
+      clearCache: "/api/clear-cache"
     },
-    documentation: "请访问 /api/songs, /api/search, /api/sync 等端点"
+    documentation: "请访问 /api/songs, /api/search, /api/sync, /api/clear-cache 等端点"
   });
 }
