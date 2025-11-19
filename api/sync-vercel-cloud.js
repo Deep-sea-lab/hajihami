@@ -370,14 +370,36 @@ export default async function handler(req, res) {
       await Promise.allSettled(coverPromises);
     }
 
-    // 11. 保存所有数据到云端缓存
-    console.log(`☁️ 保存 ${allSongs.length} 首歌曲到云端缓存...`);
-    const cloudResult = await cloudCache.saveSongs(allSongs);
+    // 11. 分片保存数据到云端缓存（避免Vercel截断问题）
+    console.log(`☁️ 分片保存 ${allSongs.length} 首歌曲到云端缓存...`);
+    let cloudResult;
+    if (allSongs.length > 1000) {
+      // 如果数据量大，分片保存
+      const chunkSize = 1000;
+      let successCount = 0;
+      let totalCount = Math.ceil(allSongs.length / chunkSize);
+      
+      for (let i = 0; i < allSongs.length; i += chunkSize) {
+        const chunk = allSongs.slice(i, i + chunkSize);
+        const chunkResult = await cloudCache.saveSongs(chunk);
+        if (chunkResult.success) {
+          successCount++;
+          console.log(`☁️ 分片 ${Math.floor(i / chunkSize) + 1}/${totalCount} 保存成功 (${chunk.length} 首)`);
+        } else {
+          console.error(`❌ 分片 ${Math.floor(i / chunkSize) + 1} 保存失败:`, chunkResult.error);
+        }
+      }
+      
+      cloudResult = { success: successCount === totalCount, totalChunks: totalCount, successfulChunks: successCount };
+    } else {
+      // 如果数据量不大，直接保存
+      cloudResult = await cloudCache.saveSongs(allSongs);
+    }
     
     if (cloudResult.success) {
       console.log(`✅ 云端缓存全量更新成功`);
     } else {
-      console.error(`❌ 云端缓存全量更新失败:`, cloudResult.error);
+      console.error(`❌ 云端缓存全量更新失败:`, cloudResult);
     }
 
     // 12. 更新本地缓存
@@ -388,15 +410,21 @@ export default async function handler(req, res) {
       console.error('❌ 保存本地缓存失败:', error.message);
     }
 
-    // 13. 返回同步结果
+    // 13. 返回同步结果（对于大量数据，避免返回完整数据集以防止截断）
     const response = {
       code: 200,
-      success: true,
+      success: cloudResult.success,
       total: allSongs.length,
-      updatedSongs: allSongs, // 返回所有同步的歌曲信息
       sync_time: new Date().toISOString(),
       message: `全量同步完成，同步 ${allSongs.length} 首歌曲`
     };
+
+    // 如果数据量较小，可以返回完整数据；否则只返回基本信息以避免截断
+    if (allSongs.length <= 1000) {
+      response.updatedSongs = allSongs;
+    } else {
+      response.message += ` (数据量较大，如需获取数据请使用 /api/songs 接口分页获取)`;
+    }
 
     console.log(`✅ 全量同步完成，同步 ${allSongs.length} 首歌曲`);
     return res.status(200).json(response);
