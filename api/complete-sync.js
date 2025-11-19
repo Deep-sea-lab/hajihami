@@ -28,7 +28,24 @@ export default async function handler(req, res) {
   res.setHeader('Surrogate-Control', 'no-store');
 
   try {
-    console.log('🚀 开始完整的Notion数据同步流程...');
+    // 获取查询参数
+    const { range } = req.query || req.body || {};
+    let startRange, endRange;
+    
+    if (range === '1') {
+      startRange = 0;      // 从第1条开始（数组索引0）
+      endRange = 999;      // 到第1000条结束（数组索引999）
+      console.log('🚀 开始同步Notion数据范围 1-1000...');
+    } else if (range === '2') {
+      startRange = 1000;   // 从第1001条开始（数组索引1000）
+      endRange = 1999;     // 到第2000条结束（数组索引1999）
+      console.log('🚀 开始同步Notion数据范围 1001-2000...');
+    } else {
+      // 如果没有指定范围参数或参数无效，则进行全量同步
+      startRange = 0;
+      endRange = Infinity; // 无限制，全量同步
+      console.log('🚀 开始完整的Notion数据同步流程...');
+    }
 
     // 1. 获取环境变量
     const apiKey = process.env.NOTION_API_KEY;
@@ -164,20 +181,25 @@ export default async function handler(req, res) {
       return parsed;
     }
 
-    // 6. 查询所有页面，确保获取全部数据
-    async function queryAllPages(databaseId) {
+    // 6. 分批查询页面，每次查询指定数量
+    async function queryBatchPages(databaseId, startCursor = null, batchSize = 1000) {
       let allPages = [];
       let hasMore = true;
-      let startCursor = null;
+      let currentCursor = startCursor;
       const startTime = new Date().getTime(); // 初始化开始时间
+      let batchCount = 0; // 批次计数
 
-      while (hasMore) {
+      while (hasMore && allPages.length < batchSize) {
+        // 计算本次请求的页面大小
+        const remaining = batchSize - allPages.length;
+        const pageSize = Math.min(100, remaining); // 最大100，且不超过剩余数量
+
         const body = { 
-          page_size: 100, // 增加页面大小以提高效率
+          page_size: pageSize,
         };
 
-        if (startCursor) {
-          body.start_cursor = startCursor;
+        if (currentCursor) {
+          body.start_cursor = currentCursor;
         }
 
         const response = await fetch(`${baseURL}/databases/${databaseId}/query`, {
@@ -209,21 +231,26 @@ export default async function handler(req, res) {
           console.log('⚠️ 无法更新同步进度文件:', e.message);
         }
 
-        hasMore = data.has_more;
-        startCursor = data.next_cursor;
+        hasMore = data.has_more && allPages.length < batchSize;
+        currentCursor = data.next_cursor;
+        batchCount++;
 
         // 检查执行时间，防止超时
-        if (process.env.VERCEL && Date.now() - startTime > 28000) { // 28秒后停止，留出处理时间
-          console.log('⏰ 接近超时限制，停止获取更多页面');
+        if (process.env.VERCEL && Date.now() - startTime > 50000) { // 50秒后停止，留出处理时间
+          console.log('⏰ 接近超时限制，停止获取更多页面，当前已获取:', allPages.length);
           break;
         }
       }
 
-      console.log(`✅ 数据库查询完成，共 ${allPages.length} 条记录`);
-      return allPages;
+      console.log(`✅ 数据库批处理查询完成，共 ${allPages.length} 条记录`);
+      return {
+        pages: allPages,
+        hasMore,
+        nextCursor: currentCursor
+      };
     }
 
-    // 7. 获取并处理数据
+    // 7. 获取并处理数据（分批处理）
     const dbIds = databaseIds.split(',').map(id => id.trim());
     console.log(`🔄 开始处理 ${dbIds.length} 个数据库:`, dbIds);
 
@@ -231,8 +258,32 @@ export default async function handler(req, res) {
     
     for (const dbId of dbIds) {
       console.log(`🔄 开始处理数据库: ${dbId}`);
-      const pages = await queryAllPages(dbId);
-      allPages = allPages.concat(pages);
+      
+      // 分批查询，每次1000条
+      let hasMore = true;
+      let startCursor = null;
+      
+      while (hasMore) {
+        const batchResult = await queryBatchPages(dbId, startCursor, 1000);
+        allPages = allPages.concat(batchResult.pages);
+        hasMore = batchResult.hasMore;
+        startCursor = batchResult.nextCursor;
+        
+        console.log(`🔄 当前总计获取: ${allPages.length} 条记录`);
+        
+        // 如果已经获取了足够多的数据满足范围要求，则停止
+        if (allPages.length > endRange && endRange !== Infinity) {
+          break;
+        }
+      }
+    }
+    
+    // 根据范围参数过滤数据
+    if (startRange !== 0 || endRange !== Infinity) {
+      console.log(`📋 原始数据量: ${allPages.length} 条`);
+      console.log(`📋 应用范围过滤: 索引 ${startRange} 到 ${endRange}`);
+      allPages = allPages.slice(startRange, endRange + 1); // +1 因为 slice 不包含结束索引
+      console.log(`📋 过滤后数据量: ${allPages.length} 条`);
     }
 
     // 8. 解析数据
@@ -361,3 +412,4 @@ export default async function handler(req, res) {
     });
   }
 }
+

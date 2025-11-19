@@ -28,7 +28,24 @@ export default async function handler(req, res) {
   res.setHeader('Surrogate-Control', 'no-store');
 
   try {
-    console.log('🚀 开始完整的Notion数据同步流程...');
+    // 获取查询参数
+    const { range } = req.query || req.body || {};
+    let startRange, endRange;
+    
+    if (range === '1') {
+      startRange = 0;      // 从第1条开始（数组索引0）
+      endRange = 999;      // 到第1000条结束（数组索引999）
+      console.log('🚀 开始同步Notion数据范围 1-1000...');
+    } else if (range === '2') {
+      startRange = 1000;   // 从第1001条开始（数组索引1000）
+      endRange = 1999;     // 到第2000条结束（数组索引1999）
+      console.log('🚀 开始同步Notion数据范围 1001-2000...');
+    } else {
+      // 如果没有指定范围参数或参数无效，则进行全量同步
+      startRange = 0;
+      endRange = Infinity; // 无限制，全量同步
+      console.log('🚀 开始完整的Notion数据同步流程...');
+    }
 
     // 1. 获取环境变量
     const apiKey = process.env.NOTION_API_KEY;
@@ -253,7 +270,20 @@ export default async function handler(req, res) {
         startCursor = batchResult.nextCursor;
         
         console.log(`🔄 当前总计获取: ${allPages.length} 条记录`);
+        
+        // 如果已经获取了足够多的数据满足范围要求，则停止
+        if (allPages.length > endRange && endRange !== Infinity) {
+          break;
+        }
       }
+    }
+    
+    // 根据范围参数过滤数据
+    if (startRange !== 0 || endRange !== Infinity) {
+      console.log(`📋 原始数据量: ${allPages.length} 条`);
+      console.log(`📋 应用范围过滤: 索引 ${startRange} 到 ${endRange}`);
+      allPages = allPages.slice(startRange, endRange + 1); // +1 因为 slice 不包含结束索引
+      console.log(`📋 过滤后数据量: ${allPages.length} 条`);
     }
 
     // 8. 解析数据
