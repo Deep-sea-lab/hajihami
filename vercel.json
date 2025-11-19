@@ -1,10 +1,6 @@
 {
   "version": 2,
   "functions": {
-    "api/sync-vercel-cloud.js": {
-      "maxDuration": 60,
-      "memory": 1024
-    },
     "api/songs-vercel.js": {
       "maxDuration": 10,
       "memory": 512
@@ -17,10 +13,6 @@
       "maxDuration": 10,
       "memory": 128
     },
-    "api/cron-vercel.js": {
-      "maxDuration": 60,
-      "memory": 1024
-    },
     "api/favicon.js": {
       "maxDuration": 10,
       "memory": 128
@@ -31,11 +23,6 @@
     }
   },
   "routes": [
-    {
-      "src": "/api/sync",
-      "dest": "/api/sync-vercel-cloud.js",
-      "methods": ["GET", "POST"]
-    },
     {
       "src": "/api/songs",
       "dest": "/api/songs-vercel.js",
@@ -52,18 +39,8 @@
       "methods": ["GET"]
     },
     {
-      "src": "/api/cron",
-      "dest": "/api/cron-vercel.js"
-    },
-    {
       "src": "/favicon.ico",
       "dest": "/api/favicon.js"
-    }
-  ],
-  "crons": [
-    {
-      "path": "/api/cron",
-      "schedule": "0 0 * * *"
     }
   ]
 }
