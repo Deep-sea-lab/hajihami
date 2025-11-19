@@ -28,24 +28,7 @@ export default async function handler(req, res) {
   res.setHeader('Surrogate-Control', 'no-store');
 
   try {
-    // 获取查询参数
-    const { range } = req.query || req.body || {};
-    let startRange, endRange;
-    
-    if (range === '1') {
-      startRange = 0;      // 从第1条开始（数组索引0）
-      endRange = 999;      // 到第1000条结束（数组索引999）
-      console.log('🚀 开始同步Notion数据范围 1-1000...');
-    } else if (range === '2') {
-      startRange = 1000;   // 从第1001条开始（数组索引1000）
-      endRange = 1999;     // 到第2000条结束（数组索引1999）
-      console.log('🚀 开始同步Notion数据范围 1001-2000...');
-    } else {
-      // 如果没有指定范围参数或参数无效，则进行全量同步
-      startRange = 0;
-      endRange = Infinity; // 无限制，全量同步
-      console.log('🚀 开始完整的Notion数据同步流程...');
-    }
+    console.log('🚀 开始完整的Notion数据同步流程...');
 
     // 1. 获取环境变量
     const apiKey = process.env.NOTION_API_KEY;
@@ -181,24 +164,20 @@ export default async function handler(req, res) {
       return parsed;
     }
 
-    // 6. 查询指定范围的页面（跳过前面不需要的数据）
-    async function queryRangePages(databaseId, startRange, endRange) {
+    // 6. 查询所有页面
+    async function queryAllPages(databaseId) {
       let allPages = [];
       let hasMore = true;
-      let currentCursor = null;
+      let startCursor = null;
       const startTime = new Date().getTime(); // 初始化开始时间
 
-      // 需要跳过的页面数量
-      let skipCount = startRange;
-      let processedCount = 0;
-
-      while (hasMore && processedCount <= endRange - startRange) {
+      while (hasMore) {
         const body = { 
           page_size: 100,
         };
 
-        if (currentCursor) {
-          body.start_cursor = currentCursor;
+        if (startCursor) {
+          body.start_cursor = startCursor;
         }
 
         const response = await fetch(`${baseURL}/databases/${databaseId}/query`, {
@@ -213,26 +192,10 @@ export default async function handler(req, res) {
         }
         
         const data = await response.json();
-        let newPages = data.results || [];
-        
-        // 跳过前面不需要的页面
-        if (skipCount > 0) {
-          const skipFromThisBatch = Math.min(skipCount, newPages.length);
-          newPages = newPages.slice(skipCount);
-          skipCount -= skipFromThisBatch;
-          processedCount += skipFromThisBatch;
-        }
-        
-        // 添加到结果中，但不超过所需数量
-        const remainingSlots = (endRange - startRange + 1) - allPages.length;
-        if (newPages.length > remainingSlots) {
-          newPages = newPages.slice(0, remainingSlots);
-        }
-        
+        const newPages = data.results || [];
         allPages = allPages.concat(newPages);
-        processedCount += newPages.length;
         
-        console.log(`📦 已获取 ${allPages.length} 条记录 (本次批次: ${newPages.length})`);
+        console.log(`📦 已获取 ${allPages.length} 条记录 (当前页: ${newPages.length})`);
         
         // 更新同步进度到临时存储
         try {
@@ -246,26 +209,21 @@ export default async function handler(req, res) {
           console.log('⚠️ 无法更新同步进度文件:', e.message);
         }
 
-        hasMore = data.has_more && allPages.length < (endRange - startRange + 1);
-        currentCursor = data.next_cursor;
+        hasMore = data.has_more;
+        startCursor = data.next_cursor;
 
         // 检查执行时间，防止超时
         if (process.env.VERCEL && Date.now() - startTime > 50000) { // 50秒后停止，留出处理时间
           console.log('⏰ 接近超时限制，停止获取更多页面，当前已获取:', allPages.length);
           break;
         }
-        
-        // 如果已经获取了足够的数据，停止
-        if (allPages.length >= (endRange - startRange + 1)) {
-          break;
-        }
       }
 
-      console.log(`✅ 数据库范围查询完成，共 ${allPages.length} 条记录`);
+      console.log(`✅ 数据库查询完成，共 ${allPages.length} 条记录`);
       return allPages;
     }
 
-    // 7. 获取并处理数据（根据范围参数）
+    // 7. 获取并处理数据
     const dbIds = databaseIds.split(',').map(id => id.trim());
     console.log(`🔄 开始处理 ${dbIds.length} 个数据库:`, dbIds);
 
@@ -273,46 +231,9 @@ export default async function handler(req, res) {
     
     for (const dbId of dbIds) {
       console.log(`🔄 开始处理数据库: ${dbId}`);
-      
-      // 根据是否有范围参数决定查询方式
-      if (startRange !== 0 || endRange !== Infinity) {
-        // 只查询指定范围的数据
-        const rangePages = await queryRangePages(dbId, startRange, endRange);
-        allPages = allPages.concat(rangePages);
-      } else {
-        // 查询所有数据
-        let hasMore = true;
-        let startCursor = null;
-        
-        while (hasMore) {
-          const body = { page_size: 100 };
-          if (startCursor) {
-            body.start_cursor = startCursor;
-          }
-
-          const response = await fetch(`${baseURL}/databases/${databaseId}/query`, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify(body)
-          });
-
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${await response.text()}`);
-          }
-          
-          const data = await response.json();
-          const newPages = data.results || [];
-          allPages = allPages.concat(newPages);
-          
-          hasMore = data.has_more;
-          startCursor = data.next_cursor;
-          
-          console.log(`🔄 当前总计获取: ${allPages.length} 条记录`);
-        }
-      }
+      const pages = await queryAllPages(dbId);
+      allPages = allPages.concat(pages);
     }
-    
-    console.log(`📋 最终数据量: ${allPages.length} 条`);
 
     // 8. 解析数据
     console.log('🔧 解析数据中...');
@@ -398,36 +319,14 @@ export default async function handler(req, res) {
       await Promise.allSettled(coverPromises);
     }
 
-    // 11. 分片保存数据到云端缓存（避免Vercel截断问题）
-    console.log(`☁️ 分片保存 ${allSongs.length} 首歌曲到云端缓存...`);
-    let cloudResult;
-    if (allSongs.length > 1000) {
-      // 如果数据量大，分片保存
-      const chunkSize = 1000;
-      let successCount = 0;
-      let totalCount = Math.ceil(allSongs.length / chunkSize);
-      
-      for (let i = 0; i < allSongs.length; i += chunkSize) {
-        const chunk = allSongs.slice(i, i + chunkSize);
-        const chunkResult = await cloudCache.saveSongs(chunk);
-        if (chunkResult.success) {
-          successCount++;
-          console.log(`☁️ 分片 ${Math.floor(i / chunkSize) + 1}/${totalCount} 保存成功 (${chunk.length} 首)`);
-        } else {
-          console.error(`❌ 分片 ${Math.floor(i / chunkSize) + 1} 保存失败:`, chunkResult.error);
-        }
-      }
-      
-      cloudResult = { success: successCount === totalCount, totalChunks: totalCount, successfulChunks: successCount };
-    } else {
-      // 如果数据量不大，直接保存
-      cloudResult = await cloudCache.saveSongs(allSongs);
-    }
+    // 11. 保存所有数据到云端缓存
+    console.log(`☁️ 保存 ${allSongs.length} 首歌曲到云端缓存...`);
+    const cloudResult = await cloudCache.saveSongs(allSongs);
     
     if (cloudResult.success) {
       console.log(`✅ 云端缓存全量更新成功`);
     } else {
-      console.error(`❌ 云端缓存全量更新失败:`, cloudResult);
+      console.error(`❌ 云端缓存全量更新失败:`, cloudResult.error);
     }
 
     // 12. 更新本地缓存
@@ -438,21 +337,15 @@ export default async function handler(req, res) {
       console.error('❌ 保存本地缓存失败:', error.message);
     }
 
-    // 13. 返回同步结果（对于大量数据，避免返回完整数据集以防止截断）
+    // 13. 返回同步结果
     const response = {
       code: 200,
-      success: cloudResult.success,
+      success: true,
       total: allSongs.length,
+      updatedSongs: allSongs, // 返回所有同步的歌曲信息
       sync_time: new Date().toISOString(),
       message: `全量同步完成，同步 ${allSongs.length} 首歌曲`
     };
-
-    // 如果数据量较小，可以返回完整数据；否则只返回基本信息以避免截断
-    if (allSongs.length <= 1000) {
-      response.updatedSongs = allSongs;
-    } else {
-      response.message += ` (数据量较大，如需获取数据请使用 /api/songs 接口分页获取)`;
-    }
 
     console.log(`✅ 全量同步完成，同步 ${allSongs.length} 首歌曲`);
     return res.status(200).json(response);
