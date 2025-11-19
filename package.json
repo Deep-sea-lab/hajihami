@@ -10,18 +10,7 @@
   "scripts": {
     "start": "node index.js api",
     "api": "node index.js api",
-    "sync": "node index.js sync",
-    "realtime": "node index.js realtime",
-    "status": "node index.js status",
-    "list": "node index.js list",
-    "test": "node index.js test",
-    "stats": "node index.js stats",
-    "clean": "node index.js clean",
-    "forcesync": "node index.js sync --full",
-    "forcerealtime": "node index.js realtime --full",
-    "vercel:build": "echo 'Build completed'",
-    "cli": "node tools/cli.js",
-    "hajihami": "node tools/cli.js"
+    "test": "node index.js test"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.81.1",
