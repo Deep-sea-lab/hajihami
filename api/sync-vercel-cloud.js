@@ -181,21 +181,20 @@ export default async function handler(req, res) {
       return parsed;
     }
 
-    // 6. 分批查询页面，每次查询指定数量
-    async function queryBatchPages(databaseId, startCursor = null, batchSize = 1000) {
+    // 6. 查询指定范围的页面（跳过前面不需要的数据）
+    async function queryRangePages(databaseId, startRange, endRange) {
       let allPages = [];
       let hasMore = true;
-      let currentCursor = startCursor;
+      let currentCursor = null;
       const startTime = new Date().getTime(); // 初始化开始时间
-      let batchCount = 0; // 批次计数
 
-      while (hasMore && allPages.length < batchSize) {
-        // 计算本次请求的页面大小
-        const remaining = batchSize - allPages.length;
-        const pageSize = Math.min(100, remaining); // 最大100，且不超过剩余数量
+      // 需要跳过的页面数量
+      let skipCount = startRange;
+      let processedCount = 0;
 
+      while (hasMore && processedCount <= endRange - startRange) {
         const body = { 
-          page_size: pageSize,
+          page_size: 100,
         };
 
         if (currentCursor) {
@@ -214,10 +213,26 @@ export default async function handler(req, res) {
         }
         
         const data = await response.json();
-        const newPages = data.results || [];
-        allPages = allPages.concat(newPages);
+        let newPages = data.results || [];
         
-        console.log(`📦 已获取 ${allPages.length} 条记录 (当前页: ${newPages.length})`);
+        // 跳过前面不需要的页面
+        if (skipCount > 0) {
+          const skipFromThisBatch = Math.min(skipCount, newPages.length);
+          newPages = newPages.slice(skipCount);
+          skipCount -= skipFromThisBatch;
+          processedCount += skipFromThisBatch;
+        }
+        
+        // 添加到结果中，但不超过所需数量
+        const remainingSlots = (endRange - startRange + 1) - allPages.length;
+        if (newPages.length > remainingSlots) {
+          newPages = newPages.slice(0, remainingSlots);
+        }
+        
+        allPages = allPages.concat(newPages);
+        processedCount += newPages.length;
+        
+        console.log(`📦 已获取 ${allPages.length} 条记录 (本次批次: ${newPages.length})`);
         
         // 更新同步进度到临时存储
         try {
@@ -231,26 +246,26 @@ export default async function handler(req, res) {
           console.log('⚠️ 无法更新同步进度文件:', e.message);
         }
 
-        hasMore = data.has_more && allPages.length < batchSize;
+        hasMore = data.has_more && allPages.length < (endRange - startRange + 1);
         currentCursor = data.next_cursor;
-        batchCount++;
 
         // 检查执行时间，防止超时
         if (process.env.VERCEL && Date.now() - startTime > 50000) { // 50秒后停止，留出处理时间
           console.log('⏰ 接近超时限制，停止获取更多页面，当前已获取:', allPages.length);
           break;
         }
+        
+        // 如果已经获取了足够的数据，停止
+        if (allPages.length >= (endRange - startRange + 1)) {
+          break;
+        }
       }
 
-      console.log(`✅ 数据库批处理查询完成，共 ${allPages.length} 条记录`);
-      return {
-        pages: allPages,
-        hasMore,
-        nextCursor: currentCursor
-      };
+      console.log(`✅ 数据库范围查询完成，共 ${allPages.length} 条记录`);
+      return allPages;
     }
 
-    // 7. 获取并处理数据（分批处理）
+    // 7. 获取并处理数据（根据范围参数）
     const dbIds = databaseIds.split(',').map(id => id.trim());
     console.log(`🔄 开始处理 ${dbIds.length} 个数据库:`, dbIds);
 
@@ -259,32 +274,45 @@ export default async function handler(req, res) {
     for (const dbId of dbIds) {
       console.log(`🔄 开始处理数据库: ${dbId}`);
       
-      // 分批查询，每次1000条
-      let hasMore = true;
-      let startCursor = null;
-      
-      while (hasMore) {
-        const batchResult = await queryBatchPages(dbId, startCursor, 1000);
-        allPages = allPages.concat(batchResult.pages);
-        hasMore = batchResult.hasMore;
-        startCursor = batchResult.nextCursor;
+      // 根据是否有范围参数决定查询方式
+      if (startRange !== 0 || endRange !== Infinity) {
+        // 只查询指定范围的数据
+        const rangePages = await queryRangePages(dbId, startRange, endRange);
+        allPages = allPages.concat(rangePages);
+      } else {
+        // 查询所有数据
+        let hasMore = true;
+        let startCursor = null;
         
-        console.log(`🔄 当前总计获取: ${allPages.length} 条记录`);
-        
-        // 如果已经获取了足够多的数据满足范围要求，则停止
-        if (allPages.length > endRange && endRange !== Infinity) {
-          break;
+        while (hasMore) {
+          const body = { page_size: 100 };
+          if (startCursor) {
+            body.start_cursor = startCursor;
+          }
+
+          const response = await fetch(`${baseURL}/databases/${databaseId}/query`, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify(body)
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+          }
+          
+          const data = await response.json();
+          const newPages = data.results || [];
+          allPages = allPages.concat(newPages);
+          
+          hasMore = data.has_more;
+          startCursor = data.next_cursor;
+          
+          console.log(`🔄 当前总计获取: ${allPages.length} 条记录`);
         }
       }
     }
     
-    // 根据范围参数过滤数据
-    if (startRange !== 0 || endRange !== Infinity) {
-      console.log(`📋 原始数据量: ${allPages.length} 条`);
-      console.log(`📋 应用范围过滤: 索引 ${startRange} 到 ${endRange}`);
-      allPages = allPages.slice(startRange, endRange + 1); // +1 因为 slice 不包含结束索引
-      console.log(`📋 过滤后数据量: ${allPages.length} 条`);
-    }
+    console.log(`📋 最终数据量: ${allPages.length} 条`);
 
     // 8. 解析数据
     console.log('🔧 解析数据中...');
