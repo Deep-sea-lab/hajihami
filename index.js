@@ -452,25 +452,41 @@ class NotionAPI {
       res.json({ code: 200, message: 'OK', timestamp: new Date().toISOString() });
     });
 
-    // 启动服务器
-    const server = app.listen(port, () => {
-      console.log(`✅ 服务器已启动，访问 http://localhost:${port}`);
-      console.log('🎵 支持的API端点:');
-      console.log(`   - /song/detail?ids=123,456 (歌曲详情)`);
-      console.log(`   - /search?keywords=关键词 (搜索歌曲)`);
-      console.log(`   - /songs (获取所有歌曲)`);
-      console.log(`   - /ping (存活检查)`);
-      console.log('\n🛑 按 Ctrl+C 停止服务器\n');
-    });
-
-    // 处理程序退出
-    process.on('SIGINT', () => {
-      console.log('\n🛑 停止音乐API服务器...');
-      server.close(() => {
-        console.log('✅ 服务器已停止');
-        process.exit(0);
+    // 为Vercel等无服务器环境导出app
+    if (typeof module !== 'undefined' && module.exports) {
+      module.exports = app; // For CommonJS
+    }
+    
+    // 在非Vercel环境（本地）启动服务器
+    if (typeof process.env.VERCEL === 'undefined' && 
+        typeof process.env.NETLIFY === 'undefined' &&
+        !process.env.AWS_LAMBDA_FUNCTION_NAME) {
+      const server = app.listen(port, () => {
+        console.log(`✅ 服务器已启动，访问 http://localhost:${port}`);
+        console.log('🎵 支持的API端点 (Meting API 兼容):');
+        console.log(`   - /song?id=123,456 (歌曲详情)`);
+        console.log(`   - /search?s=关键词&type=netease (搜索歌曲)`);
+        console.log(`   - /lyric?id=123 (获取歌词)`);
+        console.log(`   - /album?id=专辑ID (获取专辑)`);
+        console.log(`   - /artist?id=艺术家ID (获取艺术家)`);
+        console.log(`   - /songs (获取所有歌曲)`);
+        console.log(`   - /ping (存活检查)`);
+        console.log(`   - /?server=netease&type=search&id=关键词 (标准Meting格式)`);
+        console.log('\n🛑 按 Ctrl+C 停止服务器\n');
       });
-    });
+
+      // 处理程序退出
+      process.on('SIGINT', () => {
+        console.log('\n🛑 停止音乐API服务器...');
+        server.close(() => {
+          console.log('✅ 服务器已停止');
+          process.exit(0);
+        });
+      });
+    } else {
+      // 为无服务器环境导出处理函数
+      return app;
+    }
   }
 }
 
@@ -501,16 +517,83 @@ export { NotionAPI };
 
 // 如果直接运行，执行主函数
 try {
-  if (require.main === module) {
+  if (require.main === module && !process.env.VERCEL) {
     console.log('🚀 启动 HajihamiAPI (CommonJS 模式)...');
     console.log('运行参数:', process.argv.slice(2));
     main().catch(console.error);
   }
 } catch (e) {
   // ES Module fallback
-  if (import.meta.url.includes(process.argv[1]?.split(/[/\\]/).pop() || 'index.js')) {
+  if (import.meta.url.includes(process.argv[1]?.split(/[/\\]/).pop() || 'index.js') && !process.env.VERCEL) {
     console.log('🚀 启动 HajihamiAPI (ES Module 模式)...');
     console.log('运行参数:', process.argv.slice(2));
     main().catch(console.error);
+  }
+}
+
+// 为Vercel等无服务器环境导出API
+export default async function vercelHandler(req, res) {
+  // 检查请求路径并路由到适当的处理函数
+  const { pathname } = new URL(req.url, `http://${req.headers.host}`);
+  
+  // 检查是否是标准Meting API请求格式（/api?server=...&type=...&id=...）
+  const urlParams = new URLSearchParams(req.url.split('?')[1]);
+  const server = urlParams.get('server');
+  const type = urlParams.get('type');
+  const id = urlParams.get('id');
+  
+  if (pathname === '/api' && server && type) {
+    // 这是标准Meting API格式请求
+    const metingHandler = (await import('./api/meting-vercel.js')).default;
+    return metingHandler(req, res);
+  }
+  
+  // 根据路径路由到不同的处理函数
+  if (pathname === '/api/song' || pathname === '/song') {
+    // 动态导入处理函数
+    const songHandler = (await import('./api/song-vercel.js')).default;
+    return songHandler(req, res);
+  } else if (pathname === '/api/search' || pathname === '/search') {
+    const searchHandler = (await import('./api/search-vercel.js')).default;
+    return searchHandler(req, res);
+  } else if (pathname === '/api/lyric' || pathname === '/lyric') {
+    const lyricHandler = (await import('./api/lyric-vercel.js')).default;
+    return lyricHandler(req, res);
+  } else if (pathname === '/api/album' || pathname === '/album') {
+    const albumHandler = (await import('./api/album-vercel.js')).default;
+    return albumHandler(req, res);
+  } else if (pathname === '/api/artist' || pathname === '/artist') {
+    const artistHandler = (await import('./api/artist-vercel.js')).default;
+    return artistHandler(req, res);
+  } else if (pathname === '/api/songs' || pathname === '/songs') {
+    const songsHandler = (await import('./api/songs-vercel.js')).default;
+    return songsHandler(req, res);
+  } else if (pathname === '/api/ping' || pathname === '/ping') {
+    const pingHandler = (await import('./api/ping-vercel.js')).default;
+    return pingHandler(req, res);
+  } else if (pathname === '/api' || pathname === '/') {
+    // 默认返回API信息
+    res.setHeader('Content-Type', 'application/json');
+    res.status(200).json({
+      message: "HajihamiAPI 服务运行中 (Meting API 兼容)",
+      version: "2.0.3",
+      endpoints: {
+        songs: "/api/songs", 
+        search: "/api/search",
+        song: "/api/song",
+        lyric: "/api/lyric",
+        album: "/api/album",
+        artist: "/api/artist",
+        ping: "/api/ping",
+        meting: "/api?server=...&type=...&id=..."
+      },
+      documentation: "支持Meting API格式，请访问 /api/songs, /api/search, /api/song, /api/lyric, /api/album, /api/artist, /api/ping 等端点，或使用标准Meting格式: /api?server=netease&type=search&id=keyword"
+    });
+  } else {
+    // 未找到端点
+    res.status(404).json({
+      code: 404,
+      message: "端点未找到"
+    });
   }
 }
