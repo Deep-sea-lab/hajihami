@@ -20,3 +20,4 @@ yarn-error.log*
 *.temp
 data/*.json
 sync_state.json
+.vercel

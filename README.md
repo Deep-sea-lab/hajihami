@@ -1,12 +1,13 @@
-# Hajihami API 详细文档
+# HajihamiAPI - Meting API 兼容版音乐API
 
 ## 项目简介
 
-Hajihami API 是一个轻量级的音乐数据 API 服务，从 Supabase 数据库提供音乐数据，并兼容网易云音乐的 API 格式。该项目专注于提供高效、稳定的音乐数据查询服务。
+Hajihami API 是一个轻量级的音乐数据 API 服务，从 Supabase 数据库提供音乐数据，并完全兼容 Meting API 格式。该项目专注于提供高效、稳定的音乐数据查询服务，可直接替换 Meting API 服务。
 
 ## 功能特性
 
-- 🎵 **网易云音乐兼容 API** - 提供与网易云音乐 API 兼容的数据格式
+- 🎵 **Meting API 完全兼容** - 提供与 Meting API 相同的端点和数据格式
+- 🎧 **多平台支持** - 支持 APlayer、DPlayer 等播放器直接集成
 - 🔍 **智能搜索** - 支持按歌曲名称、歌手、专辑分类搜索，并按匹配度排序
 - ☁️ **Supabase 集成** - 使用 Supabase 作为数据存储和缓存
 - 🚀 **轻量级** - 仅依赖 Express 和 Supabase，启动快速
@@ -148,9 +149,254 @@ npm test
 | 404 | 资源不存在 |
 | 500 | 服务器内部错误 |
 
-### API 端点
+### API 端点 (Meting API 兼容)
 
-#### 1. 健康检查
+#### 1. 搜索歌曲 (Meting API 格式)
+
+支持按歌曲名称、歌手、专辑进行分类搜索。
+
+**请求**
+```http
+# Meting API 兼容格式
+# 本地版本
+GET /search?s=关键词&type=搜索类型&page=页码&limit=数量
+
+# Vercel 版本
+GET /api/search?s=关键词&type=搜索类型&page=页码&limit=数量
+```
+
+**参数说明**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| s | string | 是 | 搜索关键词 (也可使用 keywords) |
+| type | string | 否 | 平台类型：`hajihami`(默认)或其他平台 |
+| page | number | 否 | 页码，默认 1 |
+| limit | number | 否 | 每页数量，默认 30 |
+
+**搜索类型说明**
+
+- `all`: 在歌曲名称、歌手、专辑中搜索
+- `song`: 仅在歌曲名称中搜索
+- `artist`: 仅在歌手名称中搜索  
+- `album`: 仅在专辑名称中搜索
+
+**响应示例**
+```json
+{
+  "code": 200,
+  "songs": [
+    {
+      "id": "1852784062",
+      "name": "【补档】活全村音乐：哈人米",
+      "artist": "65折",
+      "artists": [
+        {
+          "name": "65折",
+          "id": 0,
+          "tencent": 0
+        }
+      ],
+      "album": "楚人美",
+      "album_id": 0,
+      "album_mid": "",
+      "album_pic": "https://i2.hdslb.com/bfs/archive/xxx.jpg",
+      "url": "https://www.bilibili.com/video/BV1WDjrz7Ebj",
+      "pic": "https://i2.hdslb.com/bfs/archive/xxx.jpg",
+      "pic_url": "https://i2.hdslb.com/bfs/archive/xxx.jpg",
+      "play_count": 190647,
+      "played_count": 190647,
+      "source": "netease",
+      "platform": "netease",
+      "tencent": 0,
+      "kugou": 0,
+      "migu": 0,
+      "kuwo": 0,
+      "br": 128000,
+      "mid": "",
+      "lyric": ""
+    }
+  ],
+  "count": 1,
+  "total": 1,
+  "result": {
+    "songs": [...],
+    "songCount": 1,
+    "searchType": "netease",
+    "keywords": "哈人米",
+    "page": 1,
+    "limit": 30,
+    "total": 1
+  }
+}
+```
+
+#### 2. 获取歌曲详情 (Meting API 格式)
+
+根据歌曲 ID 获取详细信息。
+
+**请求**
+```http
+# Meting API 兼容格式
+# 本地版本
+GET /song?id=歌曲ID
+# 或
+GET /song?ids=歌曲ID1,歌曲ID2
+
+# Vercel 版本
+GET /api/song?id=歌曲ID
+```
+
+**参数说明**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| id | string | 是 | 歌曲ID (也可使用 ids，支持多ID) |
+| type | string | 否 | 平台类型：`hajihami`(默认)或其他平台 |
+
+**响应示例**
+```json
+{
+  "code": 200,
+  "songs": [
+    {
+      "id": "1852784062",
+      "name": "【补档】活全村音乐：哈人米",
+      "artist": "65折",
+      "artists": [
+        {
+          "name": "65折",
+          "id": 0,
+          "tencent": 0
+        }
+      ],
+      "album": "楚人美",
+      "album_id": 0,
+      "album_mid": "",
+      "album_pic": "https://i2.hdslb.com/bfs/archive/xxx.jpg",
+      "url": "https://www.bilibili.com/video/BV1WDjrz7Ebj",
+      "pic": "https://i2.hdslb.com/bfs/archive/xxx.jpg",
+      "pic_url": "https://i2.hdslb.com/bfs/archive/xxx.jpg",
+      "play_count": 190647,
+      "played_count": 190647,
+      "source": "netease",
+      "platform": "netease",
+      "tencent": 0,
+      "kugou": 0,
+      "migu": 0,
+      "kuwo": 0,
+      "br": 128000,
+      "mid": "",
+      "lyric": ""
+    }
+  ],
+  "data": [...],
+  "count": 1
+}
+```
+
+#### 3. 获取歌词 (Meting API 格式)
+
+获取歌曲的歌词信息。
+
+**请求**
+```http
+# Meting API 兼容格式
+# 本地版本
+GET /lyric?id=歌曲ID
+
+# Vercel 版本
+GET /api/lyric?id=歌曲ID
+```
+
+**参数说明**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| id | string | 是 | 歌曲ID |
+| type | string | 否 | 平台类型：`hajihami`(默认)或其他平台 |
+
+**响应示例**
+```json
+{
+  "code": 200,
+  "lyric": "[00:00.00] 暂无歌词\n",
+  "translation": ""
+}
+```
+
+#### 4. 获取专辑信息 (Meting API 格式)
+
+获取专辑的详细信息。
+
+**请求**
+```http
+# Meting API 兼容格式
+# 本地版本
+GET /album?id=专辑ID
+
+# Vercel 版本
+GET /api/album?id=专辑ID
+```
+
+**参数说明**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| id | string | 是 | 专辑ID |
+
+**响应示例**
+```json
+{
+  "code": 200,
+  "data": {
+    "id": "专辑ID",
+    "name": "专辑名称",
+    "cover": "封面URL",
+    "artist": "歌手名",
+    "songs": [...], // 专辑内的歌曲列表
+    "count": 10
+  },
+  "count": 10
+}
+```
+
+#### 5. 获取艺术家信息 (Meting API 格式)
+
+获取艺术家的详细信息。
+
+**请求**
+```http
+# Meting API 兼容格式
+# 本地版本
+GET /artist?id=艺术家ID
+
+# Vercel 版本
+GET /api/artist?id=艺术家ID
+```
+
+**参数说明**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| id | string | 是 | 艺术家ID (实际按艺术家名称匹配) |
+
+**响应示例**
+```json
+{
+  "code": 200,
+  "data": {
+    "id": "艺术家ID",
+    "name": "艺术家名称",
+    "cover": "封面URL",
+    "songs": [...], // 该艺术家的歌曲列表
+    "count": 5
+  },
+  "count": 5
+}
+```
+
+#### 6. 健康检查
 
 检查 API 服务是否正常运行。
 
@@ -172,7 +418,7 @@ GET /api/ping
 }
 ```
 
-#### 2. 获取所有歌曲
+#### 7. 获取所有歌曲 (保留原端点)
 
 获取数据库中的所有歌曲数据。
 
@@ -185,39 +431,33 @@ GET /songs
 GET /api/songs
 ```
 
-**分页参数（可选）**
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| page | number | 页码，默认 1 |
-| pageSize | number | 每页数量，默认 1000 |
-| limit | number | 每页数量（pageSize 的别名） |
-| force | boolean | 强制刷新缓存，设置为 true |
-| refresh | boolean | 刷新缓存，设置为 true |
-| all | boolean | 获取所有歌曲，设置为 true |
-
 **响应示例**
 ```json
 {
   "code": 200,
   "data": [
     {
-      "id": 1852784062,
+      "id": "1852784062",
       "name": "【补档】活全村音乐：哈人米",
+      "artist": "65折",
       "artists": [
         {
-          "name": "65折"
+          "name": "65折",
+          "id": 0
         }
       ],
-      "album": {
-        "name": "楚人美"
-      },
+      "album": "楚人美",
+      "album_id": 0,
+      "album_pic": "https://i2.hdslb.com/bfs/archive/xxx.jpg",
       "url": "https://www.bilibili.com/video/BV1WDjrz7Ebj",
-      "picUrl": "https://i2.hdslb.com/bfs/archive/xxx.jpg",
-      "playedCount": 190647,
-      "fee": 0,
-      "feeReason": 0,
-      "pc": true,
-      "noCopyrightRcmd": null,
+      "pic": "https://i2.hdslb.com/bfs/archive/xxx.jpg",
+      "pic_url": "https://i2.hdslb.com/bfs/archive/xxx.jpg",
+      "play_count": 190647,
+      "played_count": 190647,
+      "source": "netease",
+      "tencent": 0,
+      "kugou": 0,
+      "migu": 0,
       "bv_number": "BV1WDjrz7Ebj",
       "creation_time": "现代主义",
       "publish_time": "2025-05-29",
@@ -225,130 +465,6 @@ GET /api/songs
     }
   ],
   "total": 1
-}
-```
-
-#### 3. 搜索歌曲
-
-支持按歌曲名称、歌手、专辑进行分类搜索。
-
-**请求**
-```http
-# 本地版本
-GET /search?keywords=关键词&type=搜索类型
-
-# Vercel 版本
-GET /api/search?keywords=关键词&type=搜索类型
-```
-
-**参数说明**
-
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| keywords | string | 是 | 搜索关键词 |
-| type | string | 否 | 搜索类型：`all`(默认), `song`, `artist`, `album` |
-
-**搜索类型说明**
-
-- `all`: 在歌曲名称、歌手、专辑中搜索
-- `song`: 仅在歌曲名称中搜索
-- `artist`: 仅在歌手名称中搜索  
-- `album`: 仅在专辑名称中搜索
-
-**响应示例**
-```json
-{
-  "code": 200,
-  "result": {
-    "songs": [
-      {
-        "id": 1852784062,
-        "name": "【补档】活全村音乐：哈人米",
-        "artists": [
-          {
-            "name": "65折"
-          }
-        ],
-        "album": {
-          "name": "楚人美"
-        }
-      }
-    ],
-    "songCount": 1,
-    "searchType": "song",
-    "keywords": "哈人米"
-  }
-}
-```
-
-#### 4. 获取歌曲详情
-
-根据歌曲 ID 获取详细信息，支持批量查询。
-
-**请求**
-```http
-# 本地版本
-GET /song/detail?ids=歌曲ID1,歌曲ID2
-
-# Vercel 版本
-GET /api/song/detail?ids=歌曲ID1,歌曲ID2
-```
-
-**参数说明**
-
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| ids | string | 是 | 歌曲ID，多个ID用逗号分隔 |
-
-**响应示例**
-```json
-{
-  "code": 200,
-  "songs": [
-    {
-      "id": 1852784062,
-      "name": "【补档】活全村音乐：哈人米",
-      "artists": [
-        {
-          "name": "65折"
-        }
-      ],
-      "album": {
-        "name": "楚人美"
-      },
-      "url": "https://www.bilibili.com/video/BV1WDjrz7Ebj",
-      "picUrl": "https://i2.hdslb.com/bfs/archive/xxx.jpg",
-      "playedCount": 190647,
-      "fee": 0,
-      "feeReason": 0,
-      "pc": true,
-      "noCopyrightRcmd": null,
-      "bv_number": "BV1WDjrz7Ebj",
-      "creation_time": "现代主义",
-      "publish_time": "2025-05-29",
-      "style": "现代主义"
-    }
-  ],
-  "privileges": [
-    {
-      "id": 0,
-      "fee": 0,
-      "payed": 0,
-      "realPayed": 0,
-      "st": 0,
-      "pl": 128000,
-      "dl": 128000,
-      "sp": 7,
-      "cp": 1,
-      "subp": 1,
-      "cs": false,
-      "maxbr": 128000,
-      "fl": 128000,
-      "toast": false,
-      "flag": 0,
-      "preSell": false
-    }
-  ]
 }
 ```
 
@@ -375,43 +491,97 @@ GET /api/song/detail?ids=歌曲ID1,歌曲ID2
 
 ## 使用示例
 
-### JavaScript (Fetch API)
+### Meting API 兼容方式 (直接替换Meting API)
+
+您可以将Meting API的地址直接替换为您的API地址：
+
+```html
+<!-- 使用MetingJS，只需更改api地址 -->
+<script src="https://cdn.jsdelivr.net/npm/meting@2.0.1/dist/Meting.min.js"></script>
+
+<meting-js
+    server="netease"  <!-- 任意值，实际请求发送到您的API -->
+    type="search"
+    id="关键词"
+    api="http://localhost:3456/"  <!-- 改为您的API地址 -->
+></meting-js>
+
+<!-- 或者使用APlayer + MetingJS -->
+<meting-js
+    server="netease"
+    type="playlist"
+    id="3778678"
+    api="http://localhost:3456/"  <!-- 改为您的API地址 -->
+    slot="list"
+>
+    <aplayer 
+        name="Music List" 
+        lrc-type="1" 
+        list-folded="true"
+        order="list">
+    </aplayer>
+</meting-js>
+```
+
+### JavaScript (Fetch API) - Meting API 兼容格式
 
 ```javascript
-// 获取所有歌曲
-async function getAllSongs() {
-  // 本地版本
-  const response = await fetch('http://localhost:3456/songs');
-  // Vercel 版本
-  // const response = await fetch('https://your-project.vercel.app/api/songs');
-  const data = await response.json();
-  console.log(data.data);
-}
-
-// 搜索歌曲
+// 搜索歌曲 (Meting API 格式)
 async function searchSongs(keyword) {
   // 本地版本
-  const response = await fetch(`http://localhost:3456/search?keywords=${keyword}&type=song`);
+  const response = await fetch(`http://localhost:3456/search?s=${keyword}&type=all&page=1&limit=30`);
   // Vercel 版本
-  // const response = await fetch(`https://your-project.vercel.app/api/search?keywords=${keyword}&type=song`);
+  // const response = await fetch(`https://your-project.vercel.app/api/search?s=${keyword}&type=all&page=1&limit=30`);
   const data = await response.json();
   console.log(data.result.songs);
 }
 
-// 获取歌曲详情
+// 获取歌曲详情 (Meting API 格式)
 async function getSongDetail(songId) {
   // 本地版本
-  const response = await fetch(`http://localhost:3456/song/detail?ids=${songId}`);
+  const response = await fetch(`http://localhost:3456/song?id=${songId}`);
   // Vercel 版本
-  // const response = await fetch(`https://your-project.vercel.app/api/song/detail?ids=${songId}`);
+  // const response = await fetch(`https://your-project.vercel.app/api/song?id=${songId}`);
   const data = await response.json();
-  console.log(data.songs[0]);
+  console.log(data.data[0]);
+}
+
+// 获取歌词 (Meting API 格式)
+async function getLyric(songId) {
+  // 本地版本
+  const response = await fetch(`http://localhost:3456/lyric?id=${songId}`);
+  // Vercel 版本
+  // const response = await fetch(`https://your-project.vercel.app/api/lyric?id=${songId}`);
+  const data = await response.json();
+  console.log(data.lyric);
+}
+
+// 获取专辑信息 (Meting API 格式)
+async function getAlbum(albumId) {
+  // 本地版本
+  const response = await fetch(`http://localhost:3456/album?id=${albumId}`);
+  // Vercel 版本
+  // const response = await fetch(`https://your-project.vercel.app/api/album?id=${albumId}`);
+  const data = await response.json();
+  console.log(data.data);
+}
+
+// 获取艺术家信息 (Meting API 格式)
+async function getArtist(artistId) {
+  // 本地版本
+  const response = await fetch(`http://localhost:3456/artist?id=${artistId}`);
+  // Vercel 版本
+  // const response = await fetch(`https://your-project.vercel.app/api/artist?id=${artistId}`);
+  const data = await response.json();
+  console.log(data.data);
 }
 
 // 使用示例
-getAllSongs();
 searchSongs('哈人米');
 getSongDetail(1852784062);
+getLyric(1852784062);
+getAlbum('楚人美');
+getArtist('65折');
 ```
 
 ### Python (requests)

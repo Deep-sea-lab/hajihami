@@ -58,7 +58,7 @@ class NotionAPI {
 
   
 
-  // 转换数据为网易云格式
+  // 转换数据为Meting API兼容格式
   convertToNetEaseFormat(songData) {
     // 使用bv_number作为ID，如果没有则生成hash
     let songId;
@@ -76,17 +76,36 @@ class NotionAPI {
     }
 
     return {
-      id: songId,
+      id: songId.toString(), // Meting API使用字符串ID
       name: songData.title || '',
-      artists: songData.creator ? [{ name: songData.creator }] : [],
-      album: { name: songData.original_song || '未知' },
-      url: songData.video_url || '',
-      picUrl: songData.cover_url || '',
-      playedCount: songData.play_count || 0,
-      fee: 0,
-      feeReason: 0,
-      pc: true,
-      noCopyrightRcmd: null,
+      // 艺术家信息
+      artist: songData.creator ? songData.creator : '未知歌手',
+      artists: songData.creator ? [{ name: songData.creator, id: 0, tencent: 0 }] : [{ name: '未知歌手', id: 0, tencent: 0 }],
+      // 专辑信息
+      album: songData.original_song || '未知专辑',
+      album_id: 0,
+      album_mid: '', // 专辑mid
+      album_pic: songData.cover_url || '',
+      // 音乐链接
+      url: songData.video_url || '', // 实际播放链接
+      // 封面图片
+      pic: songData.cover_url || '', // 封面图片链接
+      pic_url: songData.cover_url || '', // 封面图片链接
+      // 播放统计
+      play_count: songData.play_count || 0,
+      played_count: songData.play_count || 0,
+      // 其他字段
+      source: 'netease', // 标识来源
+      platform: 'netease', // 平台标识
+      tencent: 0,
+      kugou: 0,
+      migu: 0,
+      kuwo: 0,
+      // 音质信息
+      br: 128000, // 比特率
+      // 其他可能的字段
+      mid: '',
+      lyric: '', // 歌词信息
       // 额外的原始字段
       bv_number: songData.bv_number,
       creation_time: songData.creation_time,
@@ -124,63 +143,15 @@ class NotionAPI {
       next();
     });
 
-    // 网易云音乐API兼容路由
+    // Meting API 兼容路由
 
-    // 歌曲详情
-    app.get('/song/detail', async (req, res) => {
-      try {
-        const ids = req.query.ids;
-        if (!ids) {
-          return res.json({ code: 400, message: '缺少歌曲ID参数' });
-        }
-
-        const idList = ids.split(',').map(id => parseInt(id));
-        
-        // 从云端缓存获取数据
-        let allSongs = await this.getAllSongsFromCloud();
-        
-        if (!allSongs) {
-          allSongs = [];
-        }
-        
-        const netEaseSongs = allSongs.map(song => this.convertToNetEaseFormat(song));
-
-        // 过滤匹配的歌曲
-        const matchedSongs = netEaseSongs.filter(song => idList.includes(song.id));
-
-        res.json({
-          code: 200,
-          songs: matchedSongs,
-          privileges: matchedSongs.map(() => ({
-            id: 0,
-            fee: 0,
-            payed: 0,
-            realPayed: 0,
-            st: 0,
-            pl: 128000,
-            dl: 128000,
-            sp: 7,
-            cp: 1,
-            subp: 1,
-            cs: false,
-            maxbr: 128000,
-            fl: 128000,
-            toast: false,
-            flag: 0,
-            preSell: false
-          }))
-        });
-      } catch (error) {
-        console.error('歌曲详情API错误:', error);
-        res.json({ code: 500, message: '服务器错误' });
-      }
-    });
-
-    // 搜索歌曲
+    // 搜索歌曲 - Meting API格式
     app.get('/search', async (req, res) => {
       try {
-        const keywords = req.query.keywords;
-        const type = req.query.type || 'all'; // all, song, artist, album
+        const keywords = req.query.s || req.query.keywords || '';
+        const type = req.query.type || 'hajihami'; // 默认使用hajihami平台
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 30;
         
         if (!keywords) {
           return res.json({ code: 400, result: { songs: [] } });
@@ -195,35 +166,16 @@ class NotionAPI {
         
         const netEaseSongs = allSongs.map(song => this.convertToNetEaseFormat(song));
 
-        // 分类关键词匹配
+        // 搜索匹配的歌曲
         const matchedSongs = netEaseSongs.filter(song => {
           const searchTerm = keywords.toLowerCase();
-          
-          switch (type) {
-            case 'song':
-              // 只搜索歌曲名称
-              return song.name.toLowerCase().includes(searchTerm);
-            
-            case 'artist':
-              // 只搜索歌手名称
-              return song.artists.some(artist => 
-                artist.name.toLowerCase().includes(searchTerm)
-              );
-            
-            case 'album':
-              // 只搜索专辑名称
-              return song.album.name.toLowerCase().includes(searchTerm);
-            
-            case 'all':
-            default:
-              // 搜索所有字段
-              const searchText = (
-                song.name + 
-                (song.artists[0]?.name || '') + 
-                (song.album.name || '')
-              ).toLowerCase();
-              return searchText.includes(searchTerm);
-          }
+          // 搜索所有字段
+          const searchText = (
+            song.name + 
+            (song.artist || '') + 
+            (song.album || '')
+          ).toLowerCase();
+          return searchText.includes(searchTerm);
         });
 
         // 按匹配度排序
@@ -234,8 +186,8 @@ class NotionAPI {
           const getScore = (song) => {
             let score = 0;
             const name = song.name.toLowerCase();
-            const artist = song.artists[0]?.name.toLowerCase() || '';
-            const album = song.album.name.toLowerCase();
+            const artist = (song.artist || '').toLowerCase();
+            const album = (song.album || '').toLowerCase();
             
             // 完全匹配得分最高
             if (name === searchTerm) score += 100;
@@ -258,13 +210,23 @@ class NotionAPI {
           return getScore(b) - getScore(a);
         });
 
+        // 分页处理
+        const startIndex = (page - 1) * limit;
+        const paginatedSongs = sortedSongs.slice(startIndex, startIndex + limit);
+
         res.json({
           code: 200,
+          songs: paginatedSongs,
+          count: sortedSongs.length,
+          total: sortedSongs.length,
           result: {
-            songs: sortedSongs,
+            songs: paginatedSongs,
             songCount: sortedSongs.length,
             searchType: type,
-            keywords: keywords
+            keywords: keywords,
+            page: page,
+            limit: limit,
+            total: sortedSongs.length
           }
         });
       } catch (error) {
@@ -273,7 +235,196 @@ class NotionAPI {
       }
     });
 
-    // 获取所有歌曲
+    // 获取歌曲详情 - Meting API格式
+    app.get('/song', async (req, res) => {
+      try {
+        const id = req.query.id || req.query.ids;
+        const type = req.query.type || 'hajihami'; // 默认使用hajihami平台
+        
+        if (!id) {
+          return res.json({ code: 400, message: '缺少歌曲ID参数' });
+        }
+
+        const idList = Array.isArray(id) ? id : id.toString().split(',');
+        
+        // 从云端缓存获取数据
+        let allSongs = await this.getAllSongsFromCloud();
+        
+        if (!allSongs) {
+          allSongs = [];
+        }
+        
+        const netEaseSongs = allSongs.map(song => this.convertToNetEaseFormat(song));
+
+        // 过滤匹配的歌曲
+        const matchedSongs = netEaseSongs.filter(song => {
+          const songId = song.id.toString();
+          return idList.includes(songId);
+        });
+
+        if (matchedSongs.length === 0) {
+          // Meting API返回空数组而不是错误
+          return res.json({
+            code: 200,
+            songs: [],
+            count: 0
+          });
+        }
+
+        // 返回Meting API兼容格式
+        res.json({
+          code: 200,
+          songs: matchedSongs,  // Meting API使用songs字段
+          data: matchedSongs,   // 同时提供data字段保持兼容
+          count: matchedSongs.length
+        });
+      } catch (error) {
+        console.error('歌曲详情API错误:', error);
+        res.json({ code: 500, message: '服务器错误' });
+      }
+    });
+
+    // 获取歌词 - Meting API格式
+    app.get('/lyric', async (req, res) => {
+      try {
+        const id = req.query.id;
+        const type = req.query.type || 'hajihami'; // 默认使用hajihami平台
+        
+        if (!id) {
+          return res.json({ code: 400, message: '缺少歌曲ID参数' });
+        }
+
+        // 从云端缓存获取数据
+        let allSongs = await this.getAllSongsFromCloud();
+        
+        if (!allSongs) {
+          allSongs = [];
+        }
+        
+        const netEaseSongs = allSongs.map(song => this.convertToNetEaseFormat(song));
+
+        // 查找匹配的歌曲
+        const matchedSong = netEaseSongs.find(song => song.id.toString() === id.toString());
+        
+        if (!matchedSong) {
+          return res.json({ code: 404, lyric: '', message: '未找到歌曲' });
+        }
+
+        // 模拟歌词数据（如果数据库中有歌词字段，可以从那里获取）
+        const lyric = matchedSong.lyric || '[00:00.00] 暂无歌词\n';
+        
+        res.json({
+          code: 200,
+          lyric: lyric,
+          translation: '' // 可以添加翻译歌词
+        });
+      } catch (error) {
+        console.error('歌词API错误:', error);
+        res.json({ code: 500, lyric: '', message: '服务器错误' });
+      }
+    });
+
+    // 获取专辑信息 - Meting API格式
+    app.get('/album', async (req, res) => {
+      try {
+        const id = req.query.id;
+        const type = req.query.type || 'hajihami'; // 默认使用hajihami平台
+        
+        if (!id) {
+          return res.json({ code: 400, message: '缺少专辑ID参数' });
+        }
+
+        // 从云端缓存获取数据
+        let allSongs = await this.getAllSongsFromCloud();
+        
+        if (!allSongs) {
+          allSongs = [];
+        }
+        
+        const netEaseSongs = allSongs.map(song => this.convertToNetEaseFormat(song));
+
+        // 根据专辑ID查找相关歌曲（这里简化处理，实际中专辑ID可能需要单独的处理逻辑）
+        // 按专辑名称匹配歌曲
+        const albumSongs = netEaseSongs.filter(song => 
+          song.album.name.toLowerCase().includes(id.toLowerCase())
+        );
+
+        // 获取专辑信息
+        const albumInfo = albumSongs.length > 0 ? {
+          id: id,
+          name: albumSongs[0].album.name,
+          cover: albumSongs[0].picUrl,
+          artist: albumSongs[0].artists[0]?.name || '未知',
+          songs: albumSongs,
+          count: albumSongs.length
+        } : null;
+
+        if (!albumInfo) {
+          return res.json({ code: 404, message: '未找到专辑' });
+        }
+
+        res.json({
+          code: 200,
+          data: albumInfo,
+          count: albumInfo.count
+        });
+      } catch (error) {
+        console.error('专辑API错误:', error);
+        res.json({ code: 500, message: '服务器错误' });
+      }
+    });
+
+    // 获取艺术家信息 - Meting API格式
+    app.get('/artist', async (req, res) => {
+      try {
+        const id = req.query.id;
+        const type = req.query.type || 'hajihami'; // 默认使用hajihami平台
+        
+        if (!id) {
+          return res.json({ code: 400, message: '缺少艺术家ID参数' });
+        }
+
+        // 从云端缓存获取数据
+        let allSongs = await this.getAllSongsFromCloud();
+        
+        if (!allSongs) {
+          allSongs = [];
+        }
+        
+        const netEaseSongs = allSongs.map(song => this.convertToNetEaseFormat(song));
+
+        // 根据艺术家ID查找相关歌曲（这里简化处理，按艺术家名称匹配）
+        const artistSongs = netEaseSongs.filter(song => 
+          song.artists.some(artist => 
+            artist.name.toLowerCase().includes(id.toLowerCase())
+          )
+        );
+
+        // 获取艺术家信息
+        const artistInfo = artistSongs.length > 0 ? {
+          id: id,
+          name: artistSongs[0].artists[0]?.name || '未知艺术家',
+          cover: artistSongs[0].picUrl,
+          songs: artistSongs,
+          count: artistSongs.length
+        } : null;
+
+        if (!artistInfo) {
+          return res.json({ code: 404, message: '未找到艺术家' });
+        }
+
+        res.json({
+          code: 200,
+          data: artistInfo,
+          count: artistInfo.count
+        });
+      } catch (error) {
+        console.error('艺术家API错误:', error);
+        res.json({ code: 500, message: '服务器错误' });
+      }
+    });
+
+    // 获取所有歌曲（保留原有端点）
     app.get('/songs', async (req, res) => {
       try {
         // 从云端缓存获取数据
